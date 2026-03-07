@@ -13,11 +13,12 @@ db.sensor_history.deleteMany({})
 show collections
 # Xem dữ liệu trong database 
 docker exec -it iot_mongodb mongosh iot_database --eval "db.sensor_history.find().pretty()"
-
-
 # Cổng be
 http://localhost:5000/
 # Cổng fe
-
-
-Tất cả đều sài từ dữ liệu trong data base hểt, file .csv chỉ để xem dữ liệu trong data cho rõ nó như nào
+http://localhost/
+# Lệnh upcode
+git add .
+git status
+git commit -m "Khởi tạo dự án IoT: Backend FastAPI và Frontend React"
+git push -u origin main
