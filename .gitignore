@@ -1,0 +1,18 @@
+# Database data (Quan trọng nhất để sửa lỗi Permission denied)
+database/data/
+
+# Python rác
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Frontend rác
+node_modules/
+build/
+dist/
+
+# File cấu hình cá nhân
+.vscode/
+.env

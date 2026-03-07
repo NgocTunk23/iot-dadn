@@ -1,0 +1,20 @@
+# --- Web Framework & Server ---
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+
+# --- Middleware (Cho phép React truy cập) ---
+fastapi-cors==0.0.6
+
+# --- Database (MongoDB) ---
+motor==3.3.2
+pymongo==4.6.1
+
+# --- IoT & Giao tiếp ---
+paho-mqtt==1.6.1
+requests==2.31.0
+
+# --- Tiện ích ---
+python-dotenv==1.0.0
+pydantic==2.5.3
+datetime
