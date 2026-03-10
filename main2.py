@@ -82,64 +82,28 @@ def check_and_log_motion():
 # -----------------------------------------------------------------------------------------
 
 #? -----------------------------------------------------------------------------------------
-# --- HÀM BẬT ĐÈN 2---
-def turn_on_light2():
-    tiny_rgb.show(2, hex_to_rgb("#ffffff"))
-    print("Hệ thống: Đèn 2 đã bật")
-
-# --- HÀM TẮT ĐÈN 2---
-def turn_off_light2():
-    tiny_rgb.show(2, hex_to_rgb("#000000"))
-    print("Hệ thống: Đèn 2 đã tắt")
-
-# --- HÀM BẬT ĐÈN 3---
-def turn_on_light3():
-    tiny_rgb.show(3, hex_to_rgb("#ffffff"))
-    print("Hệ thống: Đèn 3 đã bật")
-
-# --- HÀM TẮT ĐÈN 3---
-def turn_off_light3():
-    tiny_rgb.show(3, hex_to_rgb("#000000"))
-    print("Hệ thống: Đèn 3 đã tắt")
-
-# --- HÀM BẬT ĐÈN 4---
-def turn_on_light4():
-    tiny_rgb.show(4, hex_to_rgb("#ffffff"))
-    print("Hệ thống: Đèn 4 đã bật")
-
-# --- HÀM TẮT ĐÈN 4---
-def turn_off_light4():
-    tiny_rgb.show(4, hex_to_rgb("#000000"))
-    print("Hệ thống: Đèn 4 đã tắt")
-
-def check_devices(number, status, brightness=100):
-    if number == 2:
-        if status:
-            turn_on_light2()
+def check_devices(number, status):
+    # --- TRƯỜNG HỢP 1: KIỂU BOOLEAN 
+    if type(status) == bool:
+        if status == True and number !=1: # 2 3 4 là đèn trong nhà, nếu status True thì bật đèn, False thì tắt đèn 2 3 4 
+            tiny_rgb.show(number, hex_to_rgb("#ffffff"))
+            print("Thiết bị", number, ": Đã BẬT")
         else:
-            turn_off_light2()
-    elif number == 3:
-        if status:
-            turn_on_light3()
-        else:
-            turn_off_light3()
-    elif number == 4:
-        if status:
-            turn_on_light4()
-        else:
-            turn_off_light4()
-    elif number == 5:
-        if brightness < 0:
-            brightness = 0
-        elif brightness > 180:
-            brightness = 180
-        control_servo(brightness) #! Tham số brightness ở đây sẽ là góc quay của servo
-    elif number == 6:
-        if brightness < 70:
-            brightness = 70
-        elif brightness > 100:
-            brightness = 100
-        control_fan(brightness) #! Tham số brightness ở đây sẽ là tốc độ quạt theo %    
+            tiny_rgb.show(number, hex_to_rgb("#000000"))
+            print("Thiết bị", number, ": Đã TẮT")
+
+    # --- TRƯỜNG HỢP 2: KIỂU INTEGER
+    elif type(status) == int:
+        if number == 6:
+            # Chuyển đổi % (0-100) sang Analog (0-1023)
+            val = round(translate(status, 0, 100, 0, 1023))
+            pin0.write_analog(val)
+            print("Quạt (ID 6) chạy với tốc độ:", status, "%")
+            
+        elif number == 4:
+            # Quay Servo đến góc 'status'
+            pin4.servo_write(status)
+            print("Servo (ID 4) quay đến góc:", status, "độ")
 # -----------------------------------------------------------------------------------------
 
 
@@ -156,26 +120,57 @@ mqtt.on_receive_message('V4', on_mqtt_message_receive_callback__V4_)
 display.scroll('ALL')
 # --- VÒNG LẶP CHÍNH ---
 while True:
-  # Gọi hàm kiểm tra cảm biến chuyển động
-  check_and_log_motion() #! Cảm biến chuyển động bật đèn vào buổi tối, cần xét thêm điều kiện
-  check_devices(2,True,100) #! cái này sẽ nhận dữ liệu truyền về từ server rồi mới hiện thực dữ liệu mà truyền vào
-  # Đọc cảm biến DHT20 
-  aiot_dht20.read_dht20()
-  # Xóa sạch màn hình LCD trước khi hiển thị dữ liệu mới
-  aiot_lcd1602.clear()
-  # Nhảy đến tọa độ (0, 0) và hiển thị nhiệt độ
-  aiot_lcd1602.move_to(0, 0)
-  aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()))
-  # Nhảy đến tọa độ (8, 0) và hiển thị độ ẩm
-  aiot_lcd1602.move_to(8, 0)
-  aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()))
-  # Nhảy đến tọa độ (0, 1) và hiển thị ánh sáng
-  aiot_lcd1602.move_to(0, 1)
-  aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)))
-#! Lệnh tiếp nhạn dữ liệu từ server mqtt nhưng sau đó ta sẽ sài bằng server.py, ta chỉ bổ sung chứ không xóa code chỗ này để tránh lỗi
-  mqtt.check_message()
-#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  # Chạy sự kiện ví dụ gửi dữ liệu mỗi 10 giây lên server.py
-  event_manager.run()
-  # Đợi 5 giây trước khi vòng lặp tiếp theo chạy để tránh quá tải CPU và mạng cũng như reset màn hình LCD 
-  time.sleep_ms(5000)
+    # Gọi hàm kiểm tra cảm biến chuyển động
+    check_and_log_motion() #! Cảm biến chuyển động bật đèn vào buổi tối, cần xét thêm điều kiện
+    try:
+        # 1. Gửi yêu cầu lấy lệnh từ Server (Timeout 2s để tránh treo mạch)
+        response = urequests.get("http://10.28.128.81:5000/api/get-commands")
+        
+        # 2. Kiểm tra nếu phản hồi thành công (Status 200 OK)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Kiểm tra xem có trường 'numberdevice' trong dữ liệu không
+            if 'numberdevice' in data:
+                commands = data['numberdevice'] # Lấy mảng [[2, True], [6, 80]]
+                
+                # Duyệt qua từng cặp lệnh trong danh sách
+                for cmd in commands:
+                    dev_id = cmd[0]     # Ví dụ: 2
+                    dev_status = cmd[1] # Ví dụ: True hoặc 80
+                    
+                    # GỌI HÀM THỰC THI
+                    check_devices(dev_id, dev_status)
+        
+        # 3. QUAN TRỌNG: Phải đóng kết nối để giải phóng RAM
+        response.close()
+
+    except Exception as e:
+        # In ra lỗi nếu mất WiFi hoặc Server sập để dễ debug
+        print("Lỗi nhận lệnh từ Server:", e)
+        # Nếu có lỗi, đảm bảo giải phóng bộ nhớ nếu biến response đã tồn tại
+        try: response.close()
+        except: pass
+
+
+
+    # Đọc cảm biến DHT20 
+    aiot_dht20.read_dht20()
+    # Xóa sạch màn hình LCD trước khi hiển thị dữ liệu mới
+    aiot_lcd1602.clear()
+    # Nhảy đến tọa độ (0, 0) và hiển thị nhiệt độ
+    aiot_lcd1602.move_to(0, 0)
+    aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()))
+    # Nhảy đến tọa độ (8, 0) và hiển thị độ ẩm
+    aiot_lcd1602.move_to(8, 0)
+    aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()))
+    # Nhảy đến tọa độ (0, 1) và hiển thị ánh sáng
+    aiot_lcd1602.move_to(0, 1)
+    aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)))
+    #! Lệnh tiếp nhạn dữ liệu từ server mqtt nhưng sau đó ta sẽ sài bằng server.py, ta chỉ bổ sung chứ không xóa code chỗ này để tránh lỗi
+    mqtt.check_message()
+    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # Chạy sự kiện ví dụ gửi dữ liệu mỗi 10 giây lên server.py
+    event_manager.run()
+    # Đợi 5 giây trước khi vòng lặp tiếp theo chạy để tránh quá tải CPU và mạng cũng như reset màn hình LCD 
+    time.sleep_ms(5000)

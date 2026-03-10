@@ -32,3 +32,7 @@ http://localhost:5000/api/sensor-data
 # Các tính năng cần thêm trong giao cái api
 dữ liệu vượt ngưỡng thì màn hình lcd sẽ hiện ra thông báp thay vì cập nhật 3 chỉ số + 1 đèn báo đỏ
  
+
+# Dùng lệnh ở dưới, xem nếu nó là 3 thì oki còn không chay lệnh docker exec -it iot_mongodb mongosh iot_database --eval "db.createCollection('danger_logs'); db.createCollection('device_logs'); print('Da tao xong 2 bang log moi')"
+docker exec -it iot_mongodb mongosh iot_database --eval "print('Tổng số bảng: ' + db.getCollectionNames().length)"
+
