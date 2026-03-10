@@ -1,11 +1,11 @@
-# Lệnh chạy
+# 1........... Lệnh chạy
 docker compose up --build
 # Lệnh tắt 
 docker compose down -v
 
 
 
-# Lệnh tạo dữ liệu mẫu để sài chỉ gọi 1 lần
+# 2........... Lệnh tạo dữ liệu mẫu để sài chỉ gọi 1 lần
 python3 backend/import_logs.py
 # Truy vấn ngày 06/03/2026
 curl -s "http://localhost:5000/api/history" | jq '.'

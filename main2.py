@@ -100,7 +100,7 @@ def check_devices(number, status):
             pin0.write_analog(val)
             print("Quạt (ID 6) chạy với tốc độ:", status, "%")
             
-        elif number == 4:
+        elif number == 5:
             # Quay Servo đến góc 'status'
             pin4.servo_write(status)
             print("Servo (ID 4) quay đến góc:", status, "độ")
