@@ -2,7 +2,7 @@ from fastapi import FastAPI, Body, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from datetime import datetime, time as dt_time
+from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
 
@@ -57,12 +57,14 @@ async def dashboard():
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
     global latest_sensor_data
-    now = datetime.now()
+    # Lấy thời gian hiện tại theo múi giờ UTC+7
+    tz_vn = timezone(timedelta(hours=7))
+    now_vn = datetime.now(tz_vn)
     
     # Cấu trúc đồng nhất với script import
-    payload["_id"] = now  # Khóa chính là thời gian hiện tại
-    payload["date"] = now.strftime("%Y-%m-%d")
-    payload["time"] = now.strftime("%H:%M:%S")
+    payload["_id"] = now_vn  # Khóa chính là thời gian hiện tại
+    payload["date"] = now_vn.strftime("%Y-%m-%d")
+    payload["time"] = now_vn.strftime("%H:%M:%S")
     
     try:
         await collection.insert_one(payload.copy())
@@ -86,6 +88,19 @@ async def get_history_by_date(date: str = Query("2026-03-06")):
         return results
     except Exception as e:
         return {"error": str(e)}
+    
+
+@app.get("/api/sensor-data")
+async def get_latest_data():
+    if not latest_sensor_data:
+        return {"temp": "--", "humi": "--", "light": "--", "time": "Đang chờ..."}
+    
+    # RẤT QUAN TRỌNG: Chuyển _id thành string trước khi trả về để tránh lỗi JSON
+    data_to_send = latest_sensor_data.copy()
+    if "_id" in data_to_send:
+        data_to_send["_id"] = str(data_to_send["_id"])
+        
+    return data_to_send
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=5000)

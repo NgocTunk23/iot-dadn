@@ -63,18 +63,18 @@ def on_event_timer_callback_send_data():
   except Exception as e:
     print("Lỗi gửi Flask:", e)
 
-  # 3. Gửi thông báo Telegram
-  try:
-    telegram_url = 'https://api.telegram.org/bot8303000903:AAEhkqa47g8sroJqP-riayYVri5UjY6b7rI/sendMessage?text=Cập_nhật_dữ_liệu&chat_id=-5054028151'
-    res_tg = urequests.get(telegram_url)
-    res_tg.close()
-  except:
-    pass
+  # # 3. Gửi thông báo Telegram
+  # try:
+  #   telegram_url = 'https://api.telegram.org/bot8303000903:AAEhkqa47g8sroJqP-riayYVri5UjY6b7rI/sendMessage?text=Cập_nhật_dữ_liệu&chat_id=-5054028151'
+  #   res_tg = urequests.get(telegram_url)
+  #   res_tg.close()
+  # except:
+  #   pass
 
   gc.collect()
 
-# Đăng ký sự kiện chạy mỗi 5000ms (5 giây)
-event_manager.add_timer_event(5000, on_event_timer_callback_send_data)
+# Đăng ký sự kiện chạy mỗi 10000ms (10 giây)
+event_manager.add_timer_event(10000, on_event_timer_callback_send_data)
 
 # --- KHỞI ĐẦU ---
 display.scroll('M')
@@ -103,4 +103,4 @@ while True:
   
   mqtt.check_message()
   event_manager.run()
-  time.sleep_ms(1000)
+  time.sleep_ms(5000)
