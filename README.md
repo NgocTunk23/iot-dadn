@@ -24,7 +24,7 @@ docker exec -it iot_mongodb mongosh iot_database --eval "db.getCollectionNames()
 # Cổng be
 http://localhost:5000/
 # Cổng fe
-http://localhost:3000
+http://localhost:80
 # Cổng dữ liệu cảm biến
 http://localhost:5000/api/sensor-data
 
@@ -36,14 +36,3 @@ dữ liệu vượt ngưỡng thì màn hình lcd sẽ hiện ra thông báp tha
 # Dùng lệnh ở dưới, xem nếu nó là 3 thì oki còn không chay lệnh docker exec -it iot_mongodb mongosh iot_database --eval "db.createCollection('danger_logs'); db.createCollection('device_logs'); print('Da tao xong 2 bang log moi')"
 docker exec -it iot_mongodb mongosh iot_database --eval "print('Tổng số bảng: ' + db.getCollectionNames().length)"
 
-docker exec -it iot_mongodb mongosh
-use iot_database
-db.createCollection("User")
-db.createCollection("House")
-db.createCollection("Mode")
-db.createCollection("Logupdate")
-db.createCollection("Sensor_history")
-db.createCollection("Device_log")
-db.createCollection("Danger_log")
-db.createCollection("Scenario")
-show collections
