@@ -141,81 +141,105 @@ scene_manager = SceneManager(scenes_collection)
 
 # --- BIẾN TOÀN CỤC ---
 latest_sensor_data = {}
-#! MỚI: Biến này lưu lệnh chờ Yolobit lấy về. Mặc định Đèn 2 tắt, Thiết bị 6 mức 0, các file backend thay đổi con số này.
-device_status = [[2, False], [6, 0]] 
-# Biến phụ để kiểm tra xem trạng thái có thay đổi không mới ghi Log thiết bị
-last_device_status = None
+#! MẶC ĐỊNH LỆNH BE: 7 thiết bị (Đèn 1-5, Servo 6, Quạt 7)
+device_status = [[1, False], [2, False], [3, False], [4, False], [5, False], [6, 0], [7, 0]]
+# Biến phụ để so sánh sự thay đổi log
+last_device_status = {}
+# Lưu trạng thái nguy hiểm để báo về Yolobit
+is_danger_global = False
 
 # Biến UC001.3
 last_sensor_update_time = None
 is_sensor_connected = False
 connection_timeout_seconds = 30
 
-# --- ENDPOINT CŨ CỦA BẠN (CÓ CHỈNH SỬA NHẸ ĐỂ LƯU LOG THIẾT BỊ) ---
+# --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
-    global latest_sensor_data, last_device_status
+    global latest_sensor_data, last_device_status, is_danger_global
     tz_vn = timezone(timedelta(hours=7))
     now_vn = datetime.now(tz_vn)
     
-    # ID chung cho tất cả các bảng
-    common_id = now_vn 
+    # Payload từ Yolobit main3.py có dạng:
+    # { houseid: "HS001", temp: 30, humi: 60, light: 50, numberdevices: [{numberdevice: 1, status: True}, ...] }
+    house_id = payload.get("houseid", "HS001")
     
-    payload["_id"] = common_id
-    payload["date"] = now_vn.strftime("%Y-%m-%d")
-    payload["time"] = now_vn.strftime("%H:%M:%S")
-    #! Lưu thêm trạng thái thiết bị lúc đó vào DB
-    payload["numberdevice"] = device_status 
+    common_time = now_vn 
+    payload["time"] = common_time # Dùng làm PK / _id
+    payload["date"] = now_vn.strftime("%Y-%m-%d") # Phục vụ Lọc API 
+    
+    # 1. Ghi vào bảng sensor_history
+    sensor_entry = payload.copy()
+    sensor_entry["_id"] = common_time # MongoDB PK
     
     try:
-        # 1. Ghi vào bảng sensor_history như bình thường
-        await collection.insert_one(payload.copy())
+        await collection.insert_one(sensor_entry)
         latest_sensor_data = payload
         
-        # UC001.3: Cập nhật thời gian nhận dữ liệu cuối cùng
+        # UC001.3: Cập nhật connection status
+        global last_sensor_update_time, is_sensor_connected
         last_sensor_update_time = now_vn
         if not is_sensor_connected:
             is_sensor_connected = True
             print("--- Cảm biến đã KẾT NỐI lại ---")
             
-        print(f"--- Đã nhận dữ liệu từ Yolobit: {payload['time']} ---")
+        print(f"--- Đã nhận dữ liệu từ Yolobit (House {house_id}) lúc: {now_vn.strftime('%H:%M:%S')} ---")
 
-        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!    TỰ VIẾT THÀNH HÀM Ở MODULE 2 và chỉ include dô đây gọi và chạy
-        # MODULE ĐIỀU KIỆN VƯỢT NGƯỠNG (Ghi log nguy hiểm)
-        if payload.get('temp', 0) > 35 or payload.get('light', 0) > 90:
+        # 2. MODULE ĐIỀU KIỆN VƯỢT NGƯỠNG (Lấy tạm ngưỡng cứng, sau này lấy từ House DB)
+        temp = payload.get('temp', 0)
+        light = payload.get('light', 0)
+        humi = payload.get('humi', 0)
+        
+        thresh_temp_max = 35
+        thresh_light_max = 90
+        
+        if temp > thresh_temp_max or light > thresh_light_max:
+            is_danger_global = True
             danger_data = {
-                "_id": common_id, # ID y chang bảng sensor
-                "reason": "Nhiệt độ hoặc ánh sáng vượt ngưỡng an toàn",
-                "value": {"temp": payload.get('temp'), "light": payload.get('light')}
+                "_id": common_time,
+                "time": common_time,
+                "houseid": house_id,
+                "type": "Vượt ngưỡng an toàn",
+                "value": {"temp": temp, "humi": humi, "light": light}
             }
             await danger_collection.insert_one(danger_data)
             print("--- !!! ĐÃ GHI LOG NGUY HIỂM !!! ---")
-        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        else:
+            is_danger_global = False
 
-        # --- LOG THIẾT BỊ: Chỉ chạy khi có thay đổi trạng thái ---
-        if device_status != last_device_status:
-            for dev in device_status:
-                # Format ID theo kiểu: ISODate + number (Ví dụ: 2026-03-09T...Z2)
-                # Dùng strftime để lấy chuỗi thời gian chuẩn ISO
-                timestamp_str = common_id.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-                dev_id_in_db = f"{timestamp_str}{dev[0]}"
+        # 3. GHI LOG THIẾT BỊ (Bảng Device_log)
+        # Yolobit gửi mảng `numberdevices` dạng dictionary: [{"numberdevice": 1, "status": True}, ...]
+        devices_status_array = payload.get("numberdevices", [])
+        
+        for dev in devices_status_array:
+            dev_num = dev.get("numberdevice")
+            stat = dev.get("status")
+            
+            # Chỉ ghi log nếu trạng thái thay đổi so với lần cuối
+            # key của dict last_device_status là dev_num
+            if last_device_status.get(dev_num) != stat:
+                
+                # Format ID: ISODate + number ví dụ 2026-03-09T05:55:25.836Z1
+                timestamp_str = common_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                dev_id_in_db = f"{timestamp_str}{dev_num}"
                 
                 device_log = {
                     "_id": dev_id_in_db,
-                    "timestamp": common_id,
-                    "device_number": dev[0],
-                    "status": dev[1]
+                    "time": common_time,
+                    "houseid": house_id,
+                    "numberdevice": dev_num,
+                    "status": stat,
+                    "reason": "Yolobit tự động cập nhật hoặc User bấm"
                 }
-                # Upsert giúp cập nhật nếu trùng hoặc thêm mới nếu chưa có
+                
                 await device_log_collection.update_one(
                     {"_id": dev_id_in_db},
                     {"$set": device_log},
                     upsert=True
                 )
-            
-            # Cập nhật trạng thái cuối cùng
-            last_device_status = [list(d) for d in device_status]
-            print(f"--- Đã lưu Log thiết bị mới: {device_status} ---")
+                
+                last_device_status[dev_num] = stat
+                print(f"--- Đã ghi Log thiết bị ID {dev_num} thay đổi thành {stat} ---")
 
     except Exception as e:
         print(f"Lỗi DB: {e}")
@@ -241,10 +265,15 @@ async def get_latest_data():
 
 # --- ENDPOINT MỚI (ĐỂ ĐIỀU KHIỂN) ---
 
-#! Yolobit sẽ gọi GET vào đây để lấy lệnh [[2, True], [6, 80]]
+#! Yolobit sẽ gọi GET vào đây để lấy lệnh
 @app.get("/api/get-commands")
 async def get_commands():
-    return {"numberdevice": device_status}
+    # Trả về format mới: dict -> array of objects
+    commands_array = [{"numberdevice": item[0], "status": item[1]} for item in device_status]
+    return {
+        "numberdevices": commands_array,
+        "is_danger": is_danger_global # Push cờ nguy hiểm xuống Yolobit
+    }
 
 
 #! Frontend hoặc File khác gọi POST vào đây để thay đổi trạng thái
@@ -265,10 +294,13 @@ async def update_control(payload: dict = Body(...)):
 async def create_scene(payload: dict = Body(...)):
     scene_name = payload.get("scene_name")
     actions = payload.get("actions")
+    trigger_type = payload.get("trigger_type", "manual")
+    trigger_time = payload.get("trigger_time", "")
+    
     if not scene_name or not actions:
          return {"status": "Error", "message": "Missing scene_name or actions"}, 400
          
-    res = await scene_manager.setup_scene(scene_name, actions)
+    res = await scene_manager.setup_scene(scene_name, actions, trigger_type, trigger_time)
     if res["status"] == "success":
         return res
     return res, 500
@@ -287,6 +319,98 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
     device_status = apply_scene_to_status(device_status, actions)
     print(f"--- Kích hoạt kịch bản '{scene_name}'. Lệnh mới: {device_status} ---")
     return {"status": "Success", "new_commands": device_status}
+
+@app.get("/api/scenes")
+async def get_all_scenes():
+    """Lấy danh sách tất cả chế độ/kịch bản đã lưu."""
+    try:
+        cursor = scenes_collection.find({})
+        results = await cursor.to_list(length=100)
+        for item in results:
+            item["_id"] = str(item["_id"])
+            if "updated_at" in item:
+                item["updated_at"] = str(item["updated_at"])
+        return results
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/api/scenes")
+async def delete_scene(scene_name: str = Query(...)):
+    """Xóa một chế độ/kịch bản theo tên."""
+    try:
+        result = await scenes_collection.delete_one({"scene_name": scene_name})
+        if result.deleted_count > 0:
+            return {"status": "Deleted", "scene_name": scene_name}
+        return {"status": "Not Found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MOCK CHO FRONTEND ---
+import random, math
+
+@app.get("/api/sensor-comparison")
+async def get_sensor_comparison():
+    """Trả về dữ liệu so sánh so với chu kỳ trước (mock tạm thời để ghép FE)."""
+    return {
+        "temp": {"delta": 1.2, "label": "so với tuần trước"},
+        "humi": {"delta": -2.1, "label": "so với tuần trước"},
+        "light": {"delta": 30, "label": "so với tuần trước"},
+    }
+
+@app.get("/api/weekly-trend")
+async def get_weekly_trend(period: str = Query("week")):
+    """Trả về dữ liệu xu hướng theo chu kỳ (mock tạm thời để ghép FE)."""
+    if period == "month":
+        return {
+            "temp": [{"day": f"Tuần {i}", "value": round(28.0 + random.uniform(-1, 1), 1)} for i in range(1, 5)],
+            "humi": [{"day": f"Tuần {i}", "value": round(65.0 + random.uniform(-3, 3), 1)} for i in range(1, 5)],
+            "light": [{"day": f"Tuần {i}", "value": int(800 + random.uniform(-50, 50))} for i in range(1, 5)],
+        }
+    elif period == "year":
+        return {
+            "temp": [{"day": f"Tháng {i}", "value": round(27.0 + math.sin(i)*2, 1)} for i in range(1, 13)],
+            "humi": [{"day": f"Tháng {i}", "value": round(60.0 + math.cos(i)*5, 1)} for i in range(1, 13)],
+            "light": [{"day": f"Tháng {i}", "value": int(750 + math.sin(i)*100)} for i in range(1, 13)],
+        }
+    else:
+        return {
+            "temp": [
+                {"day": "T2", "value": 28.0}, {"day": "T3", "value": 28.5},
+                {"day": "T4", "value": 29.0}, {"day": "T5", "value": 28.8},
+                {"day": "T6", "value": 28.2}, {"day": "T7", "value": 27.5},
+                {"day": "CN", "value": 27.8},
+            ],
+            "humi": [
+                {"day": "T2", "value": 65.0}, {"day": "T3", "value": 68.0},
+                {"day": "T4", "value": 67.0}, {"day": "T5", "value": 69.0},
+                {"day": "T6", "value": 71.0}, {"day": "T7", "value": 66.0},
+                {"day": "CN", "value": 65.5},
+            ],
+            "light": [
+                {"day": "T2", "value": 810}, {"day": "T3", "value": 860},
+                {"day": "T4", "value": 850}, {"day": "T5", "value": 880},
+                {"day": "T6", "value": 870}, {"day": "T7", "value": 840},
+                {"day": "CN", "value": 820},
+            ],
+        }
+
+@app.get("/api/sensor-alerts")
+async def get_sensor_alerts():
+    """Trả về cảnh báo & nhận định dựa trên xu hướng (mock tạm thời để ghép FE)."""
+    return [
+        {
+            "type": "warning", "title": "Nhiệt độ có xu hướng tăng",
+            "message": "Nhiệt độ trung bình đã tăng 1.2°C so với tuần trước, cần theo dõi để điều chỉnh hệ thống làm mát phù hợp."
+        },
+        {
+            "type": "info", "title": "Độ ẩm trong ngưỡng ổn định",
+            "message": "Độ ẩm dao động từ 65-70%, nằm trong khoảng lý tưởng cho môi trường sống."
+        },
+        {
+            "type": "success", "title": "Ánh sáng đạt chuẩn",
+            "message": "Mức ánh sáng trung bình 840 lux, phù hợp cho hoạt động hàng ngày."
+        },
+    ]
 
 
 # --- CÁC API KHÁC GIỮ NGUYÊN ---
@@ -324,9 +448,10 @@ async def check_sensor_connection():
                 # Ghi log nguy hiểm
                 danger_data = {
                     "_id": now_vn,
-                    "reason": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
-                    "value": {},
-                    "log_type": "Báo cáo nguy hiểm"
+                    "time": now_vn,
+                    "houseid": "HS001",
+                    "type": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
+                    "value": {}
                 }
                 try:
                     await danger_collection.insert_one(danger_data)

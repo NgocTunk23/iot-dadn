@@ -5,13 +5,15 @@ class SceneManager:
         self.scenes_collection = scenes_collection
         self.tz_vn = timezone(timedelta(hours=7))
 
-    async def setup_scene(self, scene_name, actions):
+    async def setup_scene(self, scene_name, actions, trigger_type="manual", trigger_time=""):
         """
         Lưu cấu hình kịch bản vào MongoDB.
         actions format: [{"device_id": 2, "value": True}, {"device_id": 6, "value": 50}]
         """
         scene_data = {
             "scene_name": scene_name,
+            "trigger_type": trigger_type,
+            "trigger_time": trigger_time,
             "actions": actions,
             "updated_at": datetime.now(self.tz_vn)
         }
