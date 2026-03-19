@@ -3,6 +3,8 @@ docker compose up --build
 # Lệnh tắt 
 docker compose down -v
 
+# check ip
+ipconfig
 
 
 # 2........... Lệnh tạo dữ liệu mẫu để sài chỉ gọi 1 lần

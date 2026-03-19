@@ -12,8 +12,8 @@ import gc
 
 
 #? --- CẤU HÌNH ---
-SERVER_URL = "http://10.28.128.81:5000/update" 
-COMMANDS_URL = "http://10.28.128.81:5000/api/get-commands" 
+SERVER_URL = "http://10.28.128.49:5000/update" 
+COMMANDS_URL = "http://10.28.128.49:5000/api/get-commands" 
 HOUSEID = "HS001" 
 
 tiny_rgb = RGBLed(pin16.pin, 4) 
@@ -120,7 +120,7 @@ def check_devices(number, status):
 event_manager.add_timer_event(10000, on_event_timer_callback_send_data)
 
 #? --- KHỞI ĐẦU ---
-display.scroll('BĐ')
+display.scroll('BD')
 mqtt.connect_wifi('ACLAB', 'ACLAB2023')
 mqtt.connect_broker(server='mqtt.ohstem.vn', port=1883, username='xinchao', password='')
 mqtt.on_receive_message('V4', on_mqtt_message_receive_callback__V4_)

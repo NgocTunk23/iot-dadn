@@ -11,7 +11,7 @@ import urequests
 import gc
 
 # --- CẤU HÌNH ---
-SERVER_URL = "http://10.28.128.81:5000/update" # IP Laptop của bạn
+SERVER_URL = "http://10.28.128.49:5000/update" # IP Laptop của bạn
 tiny_rgb = RGBLed(pin16.pin, 4)
 aiot_dht20 = DHT20()
 aiot_lcd1602 = LCD1602()
