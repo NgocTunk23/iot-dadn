@@ -20,9 +20,12 @@
 - **Ngôn ngữ:** Python (Tích hợp mock_server để test luồng dữ liệu khi không có kết nối phần cứng).
 - **Giao thức:** Truyền nhận tin nhắn qua MQTT, xử lý và định tuyến dữ liệu.
 
+### Database
+- **Ngôn ngữ:** MongoDB (Dễ dàng mở rộng và truyền dữ liệu có sự thay đổi, không đòi hỏi cấu trúc cố định)
+
 ### Hardware (Thiết bị IoT)
 - **Vi điều khiển:** Yolobit.
-- **Cảm biến & Khối chấp hành:** Cảm biến nhiệt độ, độ ẩm, ánh sáng; Đèn LED, động cơ Servo.
+- **Cảm biến & Khối chấp hành:** Cảm biến nhiệt độ, độ ẩm, ánh sáng; Đèn LED, động cơ Servo, Fan.
 
 
 ## 📁 Cấu trúc thư mục chính
@@ -33,6 +36,7 @@
  ┃ ┣ 📜 Dockerfile
  ┃ ┣ 📜 server.py       # Điểm entry chính của server
  ┃ ┗ 📜 requirements.txt
+ ┣ 📂 database 
  ┣ 📂 frontend          # Mã nguồn giao diện React (Vite)
  ┃ ┣ 📂 src/components  # Chứa các UI Components (Dashboard, Chart, Controls...)
  ┃ ┣ 📜 Dockerfile
@@ -43,7 +47,7 @@
 
 ## Hướng dẫn cài đặt và khởi chạy
 Dự án sử dụng Docker để đơn giản hóa quá trình triển khai. Đảm bảo máy tính của bạn đã cài đặt Docker và Docker Compose.
-
+### Vui lòng kết nối mạch microbit với máy tính và truy cập https://app.ohstem.vn/, truyền code main3.py để vận hành mạch Yolobit.
 ### Bước 1: Clone kho lưu trữ về máy
 
 Bash
