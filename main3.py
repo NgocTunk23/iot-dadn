@@ -29,10 +29,12 @@ current_device_status = {
     3: False, # LED trong nhà
     4: False, # LED trong nhà
     5: 0,     # Góc Servo
-    6: 0      # Tốc độ quạt
+    6: 0,      # Tốc độ quạt
+    7: 0
 }
 # -----------------
-
+# Biến lưu thời điểm đèn 1 bật do PIR (đơn vị: mili-giây)
+pir_trigger_time = 0
 
 #? --- HÀM GỬI DỮ LIỆU (MỖI 10 GIÂY) ---
 def on_event_timer_callback_send_data():
@@ -66,14 +68,20 @@ def on_event_timer_callback_send_data():
 
 #? --- HÀM KIỂM TRA VÀ GHI LOG CẢM BIẾN CHUYỂN ĐỘNG (PIR) ---
 def check_and_log_motion():
+    global pir_trigger_time
+    current_time = time.ticks_ms() # Lấy thời gian hiện tại
+    
     if pin1.read_digital() == 1:
-        # Có người -> Bật LED 1 và CẬP NHẬT BỘ NHỚ
+        # Có người -> Bật đèn và đánh dấu thời điểm bật
         tiny_rgb.show(1, hex_to_rgb("#ffffff"))
         current_device_status[1] = True
+        pir_trigger_time = current_time 
     else:
-        # Không có người -> Tắt LED 1 và CẬP NHẬT BỘ NHỚ
-        tiny_rgb.show(1, hex_to_rgb('#000000'))
-        current_device_status[1] = False
+        # Không có người -> Kiểm tra xem đã qua 10s chưa?
+        # time.ticks_diff tính khoảng cách giữa hiện tại và lúc bật
+        if time.ticks_diff(current_time, pir_trigger_time) > 10000:
+            tiny_rgb.show(1, hex_to_rgb('#000000'))
+            current_device_status[1] = False
 # -----------------------------------------------------------------------------------------
 
 
@@ -81,7 +89,7 @@ def check_and_log_motion():
 def check_devices(number, status):
     
     # --- Nhóm 1: Các đèn LED (ID: 1, 2, 3, 4) ---
-    if number in [1, 2, 3, 4]:
+    if number in [1, 2, 3, 4]:#! ĐỂ SỐ 1 cho có chứ không có thanh nào truyền cho nó id 1 thì 10 năm nó bật nên khỏi cũng được
         # Nếu trạng thái gửi xuống khác với trạng thái hiện tại thì mới thực thi
         if current_device_status[number] != status:
             if status == True:
@@ -95,24 +103,24 @@ def check_devices(number, status):
             current_device_status[number] = status
 
     # --- Nhóm 2: Động cơ Servo (ID: 5) ---
-    elif number == 5:
+    elif number == 6:
         angle = int(status)
-        if current_device_status[5] != angle:
+        if current_device_status[6] != angle:
             pin4.servo_write(angle)
-            print("Servo (ID 5) quay đến góc:", angle, "độ")
-            current_device_status[5] = angle # CẬP NHẬT BỘ NHỚ
+            print("Servo (ID 6) quay đến góc:", angle, "độ")
+            current_device_status[6] = angle # CẬP NHẬT BỘ NHỚ
 
     # --- Nhóm 3: Quạt / Động cơ PWM (ID: 6) ---
-    elif number == 6:
+    elif number == 7:
         speed = int(status)
-        if current_device_status[6] != speed:
+        if current_device_status[7] != speed:
             val = round(translate(speed, 0, 100, 0, 1023))
             pin0.write_analog(val)
             if speed > 0:
-                print("Quạt (ID 6) đang chạy mức:", speed, "%")
+                print("Quạt (ID 7) đang chạy mức:", speed, "%")
             else:
-                print("Quạt (ID 6) : Đã TẮT")
-            current_device_status[6] = speed # CẬP NHẬT BỘ NHỚ
+                print("Quạt (ID 7) : Đã TẮT")
+            current_device_status[7] = speed # CẬP NHẬT BỘ NHỚ
 # -----------------------------------------------------------------------------------------
 
 
@@ -123,8 +131,9 @@ event_manager.add_timer_event(10000, on_event_timer_callback_send_data)
 display.scroll('BD')
 mqtt.connect_wifi('ACLAB', 'ACLAB2023')
 mqtt.connect_broker(server='mqtt.ohstem.vn', port=1883, username='xinchao', password='')
-mqtt.on_receive_message('V4', on_mqtt_message_receive_callback__V4_)
+# mqtt.on_receive_message('V4', on_mqtt_message_receive_callback__V4_)
 display.scroll('ALL')
+last_lcd_update = time.ticks_ms()
 
 # --- VÒNG LẶP CHÍNH ---
 while True:
@@ -159,22 +168,30 @@ while True:
         except: pass
 
 
-    # Hiển thị LCD
-    aiot_lcd1602.clear()
-    aiot_lcd1602.move_to(0, 0)
-    
-    # UC001.3: Cảnh báo vượt ngưỡng lên LCD
-    if 'is_danger_alert' in locals() and is_danger_alert:
-        aiot_lcd1602.putstr('! NGUY HIEM !')
-    else:
-        aiot_dht20.read_dht20()
-        aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()))
-        aiot_lcd1602.move_to(8, 0)
-        aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()))
-        aiot_lcd1602.move_to(0, 1)
-        aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)))
-    
+    # --- CẬP NHẬT LCD (MỖI 5 GIÂY MỘT LẦN) ---
+    if time.ticks_diff(time.ticks_ms(), last_lcd_update) > 5000:
+        if 'is_danger_alert' in locals() and is_danger_alert:
+            aiot_lcd1602.clear()
+            aiot_lcd1602.move_to(0, 0)
+            aiot_lcd1602.putstr('! NGUY HIEM !')
+        else:
+            aiot_dht20.read_dht20()
+            
+            # Đưa con trỏ về đầu dòng và in, CỘNG THÊM KHOẢNG TRẮNG ("  ") ở cuối 
+            # để lấp đi các ký tự thừa của lần in trước mà không cần dùng hàm clear()
+            aiot_lcd1602.move_to(0, 0)
+            aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()) + '   ')
+            
+            aiot_lcd1602.move_to(8, 0)
+            aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()) + '   ')
+            
+            aiot_lcd1602.move_to(0, 1)
+            aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)) + '   ')
+            
+        # Reset lại mốc thời gian
+        last_lcd_update = time.ticks_ms()
+
     mqtt.check_message()
     event_manager.run()
-    time.sleep_ms(5000)
+    time.sleep_ms(100) # Giữ nguyên 100ms của bạn để API phản hồi nhanh
     gc.collect()

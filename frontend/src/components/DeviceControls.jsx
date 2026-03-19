@@ -18,7 +18,7 @@ export default function DeviceControls({ stateObj, updater }) {
           <span className="slider"></span>
         </label>
       </div>
-      <div className="device-row-slider">
+      {/* <div className="device-row-slider">
         <input
           type="range"
           min="0" max="100"
@@ -30,7 +30,7 @@ export default function DeviceControls({ stateObj, updater }) {
         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: '2px' }}>
           {stateObj[key].brightness}%
         </div>
-      </div>
+      </div> */}
     </div>
   );
 
@@ -42,11 +42,10 @@ export default function DeviceControls({ stateObj, updater }) {
 
   return (
     <div className="device-list">
-      {renderLight('light1', 'Đèn 1')}
+      {/* {renderLight('light1', 'Đèn 1')} */}
       {renderLight('light2', 'Đèn 2')}
       {renderLight('light3', 'Đèn 3')}
       {renderLight('light4', 'Đèn 4')}
-      {renderLight('light5', 'Đèn 5')}
 
       {/* Servo */}
       <div className={`device-row ${stateObj.servo === 'open' ? 'device-active' : ''}`}>
