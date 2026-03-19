@@ -133,9 +133,15 @@ while True:
     
     try:
         response = urequests.get(COMMANDS_URL)
+        is_danger_alert = False # Biến lưu trạng thái cảnh báo nguy hiểm
+        
         if response.status_code == 200:
             data = response.json()
             
+            # Đọc trạng thái cảnh báo từ Server
+            if 'is_danger' in data:
+                is_danger_alert = data['is_danger']
+
             if 'numberdevices' in data:
                 commands = data['numberdevices'] 
                 
@@ -154,14 +160,19 @@ while True:
 
 
     # Hiển thị LCD
-    aiot_dht20.read_dht20()
     aiot_lcd1602.clear()
     aiot_lcd1602.move_to(0, 0)
-    aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()))
-    aiot_lcd1602.move_to(8, 0)
-    aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()))
-    aiot_lcd1602.move_to(0, 1)
-    aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)))
+    
+    # UC001.3: Cảnh báo vượt ngưỡng lên LCD
+    if 'is_danger_alert' in locals() and is_danger_alert:
+        aiot_lcd1602.putstr('! NGUY HIEM !')
+    else:
+        aiot_dht20.read_dht20()
+        aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()))
+        aiot_lcd1602.move_to(8, 0)
+        aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()))
+        aiot_lcd1602.move_to(0, 1)
+        aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)))
     
     mqtt.check_message()
     event_manager.run()
