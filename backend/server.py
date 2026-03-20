@@ -118,6 +118,13 @@ from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
 from module.module3 import SceneManager, apply_scene_to_status
+from module.module2 import (
+    ThresholdManager,
+    NotificationChannelManager,
+    AutomationRuleManager,
+    DangerChecker,
+    AlertDispatcher,
+)
 
 app = FastAPI()
 
@@ -138,6 +145,14 @@ danger_collection = db.danger_logs   # Bảng log nguy hiểm
 device_log_collection = db.device_logs # Bảng log thiết bị
 scenes_collection = db.scenes        # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
+thresholds_collection     = db.thresholds           
+notif_channel_collection  = db.notification_channels 
+automation_rules_col      = db.automation_rules      
+ 
+threshold_mgr   = ThresholdManager(thresholds_collection)
+channel_mgr     = NotificationChannelManager(notif_channel_collection)
+rule_mgr        = AutomationRuleManager(automation_rules_col)
+alert_dispatcher = AlertDispatcher(danger_collection, notif_channel_collection)
 
 # --- BIẾN TOÀN CỤC ---
 latest_sensor_data = {}
@@ -153,7 +168,60 @@ last_sensor_update_time = None
 is_sensor_connected = False
 connection_timeout_seconds = 30
 
+
 # --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
+
+async def _process_danger_and_rules(payload, house_id, now_vn):
+    global is_danger_global, device_status
+
+    temp  = payload.get("temp",  0)
+    humi  = payload.get("humi",  0)
+    light = payload.get("light", 0)
+    sensor_data = {"temp": temp, "humi": humi, "light": light}
+
+    print(f"[DEBUG] Sensor data: {sensor_data}")
+
+    thresholds = await threshold_mgr.get_thresholds(house_id)
+    print(f"[DEBUG] Thresholds từ DB: {thresholds}")
+
+    result = DangerChecker.check(sensor_data, thresholds)
+    print(f"[DEBUG] Kết quả check: {result}")
+
+    is_danger_global = result["is_danger"]
+
+    triggered_rules = []
+
+    # UC002.3: Đánh giá kịch bản tự động
+    device_status, triggered_rules = await rule_mgr.evaluate_and_apply(
+        house_id, sensor_data, device_status
+    )
+
+    if result["is_danger"]:
+        print(f"[MODULE2] NGUY HIỂM! Vi phạm: {result['violations']}")
+        channels_doc = await notif_channel_collection.find_one({"_id": house_id})
+        print(f"[DEBUG] Channels trong DB: {channels_doc}")
+
+        has_changes = any(
+           c.get("changed")
+           for rule in triggered_rules
+           for c in rule.get("changes", [])
+        )
+        if not has_changes and triggered_rules:
+           triggered_rules = [{
+             "rule_name": triggered_rules[0]["rule_name"],
+             "changes": [{"device_name": "Tất cả thiết bị", 
+                         "changed": False,
+                         "note": "Không có thay đổi so với trạng thái hiện tại"}]
+        }]
+
+        await alert_dispatcher.dispatch(
+           house_id, result["violations"], sensor_data, device_status,
+           triggered_rules=triggered_rules
+        )
+    else:
+      await alert_dispatcher.auto_stop_alert(house_id, device_status, False)
+
+
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
     global latest_sensor_data, last_device_status, is_danger_global
@@ -190,22 +258,7 @@ async def handle_data(payload: dict = Body(...)):
         light = payload.get('light', 0)
         humi = payload.get('humi', 0)
         
-        thresh_temp_max = 35
-        thresh_light_max = 90
-        
-        if temp > thresh_temp_max or light > thresh_light_max:
-            is_danger_global = True
-            danger_data = {
-                "_id": common_time,
-                "time": common_time,
-                "houseid": house_id,
-                "type": "Vượt ngưỡng an toàn",
-                "value": {"temp": temp, "humi": humi, "light": light}
-            }
-            await danger_collection.insert_one(danger_data)
-            print("--- !!! ĐÃ GHI LOG NGUY HIỂM !!! ---")
-        else:
-            is_danger_global = False
+        await _process_danger_and_rules(payload, house_id, now_vn)
 
         # 3. GHI LOG THIẾT BỊ (Bảng Device_log)
         # Yolobit gửi mảng `numberdevices` dạng dictionary: [{"numberdevice": 1, "status": True}, ...]
@@ -463,6 +516,170 @@ async def check_sensor_connection():
 async def startup_event():
     # Khởi chạy background task khi server bắt đầu
     asyncio.create_task(check_sensor_connection())
+
+
+
+@app.get("/api/notification-channels")
+async def get_notification_channels(houseid: str = "HS001"):
+    """Lấy danh sách kênh thông báo và trạng thái hiện tại."""
+    data = await channel_mgr.get_channels(houseid)
+    return data
+ 
+@app.post("/api/notification-channels")
+async def update_notification_channel(payload: dict = Body(...)):
+    """
+    Bật/tắt kênh và cập nhật thông tin liên hệ.
+    Body: { "houseid": "HS001", "channel": "sms", "enabled": true, "phone": "0901234567" }
+          { "houseid": "HS001", "channel": "email", "enabled": true, "address": "a@b.com" }
+          { "houseid": "HS001", "channel": "app",   "enabled": true }
+    """
+    houseid      = payload.get("houseid", "HS001")
+    channel      = payload.get("channel")
+    enabled      = payload.get("enabled", True)
+    contact_info = {}
+    if "phone"   in payload: contact_info["phone"]   = payload["phone"]
+    if "address" in payload: contact_info["address"] = payload["address"]
+    if "bot_token" in payload: contact_info["bot_token"] = payload["bot_token"]  # ← thêm
+    if "chat_id"   in payload: contact_info["chat_id"]   = payload["chat_id"]
+    res = await channel_mgr.update_channel(houseid, channel, enabled, contact_info or None)
+    if res["status"] == "error":
+        return res, 400
+    return res
+ 
+ 
+# ====== UC002.2 - Ngưỡng an toàn ======
+ 
+@app.get("/api/thresholds")
+async def get_thresholds(houseid: str = "HS001"):
+    """Lấy ngưỡng an toàn hiện tại."""
+    return await threshold_mgr.get_thresholds(houseid)
+ 
+@app.post("/api/thresholds")
+async def set_threshold(payload: dict = Body(...)):
+    """
+    Lưu ngưỡng mới cho một cảm biến.
+    Body: { "houseid": "HS001", "sensor": "temp", "min": 10, "max": 40 }
+    """
+    houseid = payload.get("houseid", "HS001")
+    sensor  = payload.get("sensor")
+    min_val = payload.get("min")
+    max_val = payload.get("max")
+ 
+    if sensor is None or min_val is None or max_val is None:
+        return {"status": "error", "message": "Thiếu trường sensor, min hoặc max."}, 400
+ 
+    res = await threshold_mgr.set_threshold(houseid, sensor, min_val, max_val)
+    if res["status"] == "error":
+        return res, 400
+    return res
+ 
+@app.post("/api/thresholds/reset")
+async def reset_thresholds(payload: dict = Body(...)):
+    """UC002.2 Alternative Flow: Đặt lại về mặc định."""
+    houseid = payload.get("houseid", "HS001")
+    return await threshold_mgr.reset_to_default(houseid)
+ 
+ 
+# ====== UC002.3 - Kịch bản tự động hóa ======
+ 
+@app.get("/api/automation-rules")
+async def get_automation_rules(houseid: str = "HS001"):
+    """Lấy danh sách kịch bản của nhà."""
+    return await rule_mgr.get_rules(houseid)
+ 
+@app.post("/api/automation-rules")
+async def create_automation_rule(payload: dict = Body(...)):
+    """
+    Tạo kịch bản mới.
+    Body:
+    {
+      "houseid": "HS001",
+      "name": "Bật còi khi nhiệt độ cao",
+      "condition": {"sensor": "temp", "op": "gt", "value": 38},
+      "actions": [{"numberdevice": 7, "status": 100}],
+      "enabled": true
+    }
+    Operators: gt, lt, gte, lte, eq
+    """
+    houseid   = payload.get("houseid", "HS001")
+    name      = payload.get("name")
+    condition = payload.get("condition")
+    actions   = payload.get("actions")
+    enabled   = payload.get("enabled", True)
+ 
+    res = await rule_mgr.add_rule(houseid, name, condition, actions, enabled)
+    if res["status"] == "error":
+        return res, 400
+    return res
+ 
+@app.delete("/api/automation-rules")
+async def delete_automation_rule(houseid: str = "HS001", name: str = ""):
+    """UC002.3 Alternative Flow: Xóa kịch bản."""
+    return await rule_mgr.delete_rule(houseid, name)
+ 
+@app.patch("/api/automation-rules/toggle")
+async def toggle_automation_rule(payload: dict = Body(...)):
+    """Bật/tắt kịch bản mà không xóa."""
+    houseid = payload.get("houseid", "HS001")
+    name    = payload.get("name")
+    enabled = payload.get("enabled", True)
+    return await rule_mgr.toggle_rule(houseid, name, enabled)
+ 
+ 
+# ====== UC002.4 - Kiểm tra thủ công (debug/test endpoint) ======
+ 
+@app.get("/api/check-danger")
+async def check_danger_now(houseid: str = "HS001"):
+    """
+    UC002.4: Kiểm tra tức thì xem dữ liệu mới nhất có vượt ngưỡng không.
+    Dùng để test / debug mà không cần chờ Yolobit gửi.
+    """
+    if not latest_sensor_data:
+        return {"is_danger": False, "message": "Chưa có dữ liệu cảm biến."}
+ 
+    thresholds = await threshold_mgr.get_thresholds(houseid)
+    sensor_data = {
+        "temp":  latest_sensor_data.get("temp",  0),
+        "humi":  latest_sensor_data.get("humi",  0),
+        "light": latest_sensor_data.get("light", 0),
+    }
+    result = DangerChecker.check(sensor_data, thresholds)
+    result["thresholds_used"] = thresholds
+    result["sensor_data"]     = sensor_data
+    return result
+ 
+ 
+# ====== UC002.5 - Lịch sử sự cố ======
+ 
+@app.get("/api/danger-logs")
+async def get_danger_logs(houseid: str = "HS001", limit: int = 50):
+    tz_vn = timezone(timedelta(hours=7))
+    cursor  = danger_collection.find({"houseid": houseid}).sort("_id", -1).limit(limit)
+    results = await cursor.to_list(length=limit)
+    for item in results:
+        item["_id"] = str(item["_id"])
+        t = item.get("time")
+        if t is None:
+            item["time"] = "--"
+        elif hasattr(t, 'tzinfo') and t.tzinfo is not None:
+            item["time"] = t.astimezone(tz_vn).strftime("%Y-%m-%dT%H:%M:%S+07:00")
+        else:
+            item["time"] = (t + timedelta(hours=7)).strftime("%Y-%m-%dT%H:%M:%S+07:00")
+    return results
+ 
+@app.post("/api/stop-alert")
+async def manual_stop_alert(payload: dict = Body(...)):
+    """
+    UC002.5 Alternative Flow: Người dùng nhấn 'Tắt báo động' thủ công.
+    """
+    global device_status, is_danger_global
+    houseid = payload.get("houseid", "HS001")
+    for item in device_status:
+        if item[0] == 7:
+            item[1] = 0
+    is_danger_global = False
+    print(f"[MODULE2][UC002.5] Người dùng TẮT báo động thủ công (house: {houseid})")
+    return {"status": "success", "message": "Đã tắt báo động."}
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=5000)

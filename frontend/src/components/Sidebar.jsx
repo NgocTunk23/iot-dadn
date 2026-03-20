@@ -3,6 +3,7 @@ import React from 'react';
 const NAV_ITEMS = [
   { key: 'dashboard', icon: '📊', label: 'Tổng quan' },
   { key: 'devices',   icon: '🎛️', label: 'Thiết bị' },
+  { key: 'alerts',    icon: '🔔', label: 'Cảnh báo' }, 
   { key: 'settings',  icon: '⚙️', label: 'Cài đặt' },
 ];
 

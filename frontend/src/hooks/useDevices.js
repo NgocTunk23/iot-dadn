@@ -164,6 +164,8 @@ export default function useDevices(addToast) {
     };
 
     loadDeviceStatus();
+    const timer = setInterval(loadDeviceStatus, 3000);
+    return () => clearInterval(timer);
     loadScenes();
   }, []);
 

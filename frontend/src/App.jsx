@@ -6,13 +6,16 @@ import Dashboard from './components/Dashboard';
 import DevicesTab from './components/DevicesTab';
 import SettingsTab from './components/SettingsTab';
 import { ToastContainer, useToast } from './components/Toast';
+import AlertTab from './components/AlertTab'; 
 
 import useSensorData from './hooks/useSensorData';
 import useDevices from './hooks/useDevices';
 
+
 const PAGE_TITLES = {
   dashboard: 'Tổng quan Hệ thống',
   devices: 'Quản lý Thiết bị',
+  alerts:    'Cảnh báo & Ngưỡng', 
   settings: 'Cài đặt Hệ thống',
 };
 
@@ -45,6 +48,7 @@ function App() {
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'devices' && <DevicesTab {...devices} />}
         {activeTab === 'settings' && <SettingsTab />}
+        {activeTab === 'alerts' && <AlertTab addToast={addToast} />}
       </div>
 
       {/* Toast Notifications */}
