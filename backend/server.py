@@ -345,72 +345,30 @@ async def delete_scene(scene_name: str = Query(...)):
     except Exception as e:
         return {"error": str(e)}
 
-# --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MOCK CHO FRONTEND ---
-import random, math
+# --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MONGODB ---
+from module.module1 import DashboardAnalytics
+
+dashboard_analytics = DashboardAnalytics(collection, danger_collection)
 
 @app.get("/api/sensor-comparison")
 async def get_sensor_comparison():
-    """Trả về dữ liệu so sánh so với chu kỳ trước (mock tạm thời để ghép FE)."""
-    return {
-        "temp": {"delta": 1.2, "label": "so với tuần trước"},
-        "humi": {"delta": -2.1, "label": "so với tuần trước"},
-        "light": {"delta": 30, "label": "so với tuần trước"},
-    }
+    """Trả về dữ liệu so sánh lấy từ DB."""
+    return await dashboard_analytics.get_sensor_comparison_data()
 
 @app.get("/api/weekly-trend")
 async def get_weekly_trend(period: str = Query("week")):
-    """Trả về dữ liệu xu hướng theo chu kỳ (mock tạm thời để ghép FE)."""
-    if period == "month":
-        return {
-            "temp": [{"day": f"Tuần {i}", "value": round(28.0 + random.uniform(-1, 1), 1)} for i in range(1, 5)],
-            "humi": [{"day": f"Tuần {i}", "value": round(65.0 + random.uniform(-3, 3), 1)} for i in range(1, 5)],
-            "light": [{"day": f"Tuần {i}", "value": int(800 + random.uniform(-50, 50))} for i in range(1, 5)],
-        }
-    elif period == "year":
-        return {
-            "temp": [{"day": f"Tháng {i}", "value": round(27.0 + math.sin(i)*2, 1)} for i in range(1, 13)],
-            "humi": [{"day": f"Tháng {i}", "value": round(60.0 + math.cos(i)*5, 1)} for i in range(1, 13)],
-            "light": [{"day": f"Tháng {i}", "value": int(750 + math.sin(i)*100)} for i in range(1, 13)],
-        }
-    else:
-        return {
-            "temp": [
-                {"day": "T2", "value": 28.0}, {"day": "T3", "value": 28.5},
-                {"day": "T4", "value": 29.0}, {"day": "T5", "value": 28.8},
-                {"day": "T6", "value": 28.2}, {"day": "T7", "value": 27.5},
-                {"day": "CN", "value": 27.8},
-            ],
-            "humi": [
-                {"day": "T2", "value": 65.0}, {"day": "T3", "value": 68.0},
-                {"day": "T4", "value": 67.0}, {"day": "T5", "value": 69.0},
-                {"day": "T6", "value": 71.0}, {"day": "T7", "value": 66.0},
-                {"day": "CN", "value": 65.5},
-            ],
-            "light": [
-                {"day": "T2", "value": 810}, {"day": "T3", "value": 860},
-                {"day": "T4", "value": 850}, {"day": "T5", "value": 880},
-                {"day": "T6", "value": 870}, {"day": "T7", "value": 840},
-                {"day": "CN", "value": 820},
-            ],
-        }
+    """Legacy endpoint — redirect to realtime."""
+    return await dashboard_analytics.get_realtime_trend_data()
+
+@app.get("/api/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu xu hướng realtime từ DB."""
+    return await dashboard_analytics.get_realtime_trend_data()
 
 @app.get("/api/sensor-alerts")
 async def get_sensor_alerts():
-    """Trả về cảnh báo & nhận định dựa trên xu hướng (mock tạm thời để ghép FE)."""
-    return [
-        {
-            "type": "warning", "title": "Nhiệt độ có xu hướng tăng",
-            "message": "Nhiệt độ trung bình đã tăng 1.2°C so với tuần trước, cần theo dõi để điều chỉnh hệ thống làm mát phù hợp."
-        },
-        {
-            "type": "info", "title": "Độ ẩm trong ngưỡng ổn định",
-            "message": "Độ ẩm dao động từ 65-70%, nằm trong khoảng lý tưởng cho môi trường sống."
-        },
-        {
-            "type": "success", "title": "Ánh sáng đạt chuẩn",
-            "message": "Mức ánh sáng trung bình 840 lux, phù hợp cho hoạt động hàng ngày."
-        },
-    ]
+    """Trả về cảnh báo lấy từ collection nguy hiểm."""
+    return await dashboard_analytics.get_sensor_alerts_data()
 
 
 # --- CÁC API KHÁC GIỮ NGUYÊN ---
@@ -459,10 +417,43 @@ async def check_sensor_connection():
                 except Exception as e:
                     print(f"Lỗi ghi log mất kết nối: {e}")
 
+last_triggered_minute = ""
+
+async def check_scene_timers():
+    """Background task lặp mỗi 10 giây để kiểm tra và kích hoạt các scene hẹn giờ."""
+    global device_status, last_triggered_minute
+    while True:
+        await asyncio.sleep(10)
+        tz_vn = timezone(timedelta(hours=7))
+        now_str = datetime.now(tz_vn).strftime("%H:%M")
+        
+        # Tránh trigger nhiều lần trong cùng 1 phút
+        if now_str == last_triggered_minute:
+            continue
+
+        try:
+            # Tìm các kịch bản có trigger_type='timer' và khớp thời gian hiện tại
+            cursor = scenes_collection.find({"trigger_type": "timer", "trigger_time": now_str})
+            scenes = await cursor.to_list(length=100)
+            
+            triggered_any = False
+            for scene in scenes:
+                print(f"\n[AUTO-TRIGGER] Đã đến {now_str}. Tự động kích hoạt: {scene.get('scene_name')}")
+                # Dùng lại hàm helper từ module3
+                device_status = apply_scene_to_status(device_status, scene.get("actions", []))
+                triggered_any = True
+                
+            if triggered_any:
+                last_triggered_minute = now_str
+                print(f"--- Lệnh điều khiển mới sau Auto-Trigger: {device_status} ---")
+        except Exception as e:
+            print(f"Lỗi khi check_scene_timers: {e}")
+
 @app.on_event("startup")
 async def startup_event():
-    # Khởi chạy background task khi server bắt đầu
+    # Khởi chạy các background tasks khi server bắt đầu
     asyncio.create_task(check_sensor_connection())
+    asyncio.create_task(check_scene_timers())
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=5000)
