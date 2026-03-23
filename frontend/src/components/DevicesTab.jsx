@@ -1,6 +1,22 @@
 import React from 'react';
 import DeviceControls from './DeviceControls';
 
+const IconTimer = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '4px', verticalAlign: 'text-bottom'}}>
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
+const IconManual = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '4px', verticalAlign: 'text-bottom'}}>
+    <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
+    <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
+    <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v5" />
+    <path d="M6 13.5V11a2 2 0 0 0-2-2a2 2 0 0 0-2 2v7a6 6 0 0 0 6 6h2a8 8 0 0 0 8-8v-7a2 2 0 0 0-2-2a2 2 0 0 0-2 2v3" />
+  </svg>
+);
+
 export default function DevicesTab({
   deviceStates,
   updateDevice,
@@ -42,10 +58,10 @@ export default function DevicesTab({
                 <div>
                   <div className="mode-item-title">{mode.name}</div>
                   {mode.triggerType === 'timer' && (
-                    <div className="mode-badge">⏱️ Hẹn giờ: {mode.triggerTime}</div>
+                    <div className="mode-badge"><IconTimer /> Hẹn giờ: {mode.triggerTime}</div>
                   )}
                   {mode.triggerType === 'manual' && (
-                    <div className="mode-badge">👆 Kích hoạt thủ công</div>
+                    <div className="mode-badge"><IconManual /> Kích hoạt thủ công</div>
                   )}
                 </div>
                 <label className="toggle-switch">

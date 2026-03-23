@@ -1,0 +1,258 @@
+import random
+import math
+from datetime import datetime, timedelta, timezone
+import time as _time
+
+# --- IN-MEMORY SENSOR HISTORY (for mock comparison & realtime trend) ---
+# Mỗi entry: {"timestamp": float, "temp": float, "humi": float, "light": int}
+_sensor_history = []
+_MAX_HISTORY = 500  # Lưu tối đa 500 bản ghi
+
+def record_sensor_reading(temp, humi, light):
+    """Ghi nhận 1 lần đọc cảm biến vào bộ nhớ tạm (gọi từ mock_server)."""
+    _sensor_history.append({
+        "timestamp": _time.time(),
+        "temp": temp, "humi": humi, "light": light,
+    })
+    if len(_sensor_history) > _MAX_HISTORY:
+        del _sensor_history[:-_MAX_HISTORY]
+
+
+# --- STATIC MOCK FUNCTIONS FOR MOCK_SERVER.PY ---
+
+def get_sensor_comparison_data():
+    """
+    So sánh sensor hiện tại:
+      TH1 (ưu tiên): So với trung bình trong ngày.
+      TH2 (dự phòng): Nếu dữ liệu ngày < 3 bản ghi → so sánh với 5 phút trước.
+    """
+    now = _time.time()
+
+    # Thu thập dữ liệu ngày (từ 00:00 hôm nay)
+    tz_vn = timezone(timedelta(hours=7))
+    today_start = datetime.now(tz_vn).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_ts = today_start.timestamp()
+
+    today_data = [r for r in _sensor_history if r["timestamp"] >= today_ts]
+
+    if len(today_data) >= 3 and len(_sensor_history) > 0:
+        # TH1: So sánh với trung bình ngày
+        avg_temp = sum(r["temp"] for r in today_data) / len(today_data)
+        avg_humi = sum(r["humi"] for r in today_data) / len(today_data)
+        avg_light = sum(r["light"] for r in today_data) / len(today_data)
+
+        current = _sensor_history[-1]
+        return {
+            "temp": {"delta": round(current["temp"] - avg_temp, 1), "label": "So với trung bình ngày"},
+            "humi": {"delta": round(current["humi"] - avg_humi, 1), "label": "So với trung bình ngày"},
+            "light": {"delta": round(current["light"] - avg_light), "label": "So với trung bình ngày"},
+        }
+
+    # TH2: So sánh với 5 phút trước
+    five_min_ago = now - 300
+    old_data = [r for r in _sensor_history if r["timestamp"] <= five_min_ago]
+    if old_data and len(_sensor_history) > 0:
+        old = old_data[-1]
+        current = _sensor_history[-1]
+        return {
+            "temp": {"delta": round(current["temp"] - old["temp"], 1), "label": "So với 5 phút trước"},
+            "humi": {"delta": round(current["humi"] - old["humi"], 1), "label": "So với 5 phút trước"},
+            "light": {"delta": round(current["light"] - old["light"]), "label": "So với 5 phút trước"},
+        }
+
+    # Chưa có dữ liệu → fallback cứng
+    return {
+        "temp": {"delta": 1.2, "label": "So với trung bình ngày"},
+        "humi": {"delta": -2.1, "label": "So với trung bình ngày"},
+        "light": {"delta": 30, "label": "So với trung bình ngày"},
+    }
+
+
+def get_realtime_trend_data():
+    """
+    Trả về 7 điểm dữ liệu ứng với: 30, 25, 20, 15, 10, 5, 0 phút trước.
+    Nếu chưa đủ dữ liệu thật, sinh dữ liệu giả mô phỏng realtime.
+    """
+    now = _time.time()
+    intervals = [30, 25, 20, 15, 10, 5, 0]  # phút trước
+    labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
+
+    temp_data, humi_data, light_data = [], [], []
+
+    for idx, mins in enumerate(intervals):
+        target_ts = now - mins * 60
+        # Tìm bản ghi gần nhất với thời điểm target
+        closest = None
+        min_diff = float("inf")
+        for r in _sensor_history:
+            diff = abs(r["timestamp"] - target_ts)
+            if diff < min_diff:
+                min_diff = diff
+                closest = r
+
+        if closest and min_diff < 180:  # Cho phép sai lệch 3 phút
+            temp_data.append({"label": labels[idx], "value": closest["temp"]})
+            humi_data.append({"label": labels[idx], "value": closest["humi"]})
+            light_data.append({"label": labels[idx], "value": closest["light"]})
+        else:
+            # Sinh dữ liệu giả mô phỏng realistic
+            base_temp = 28.5 + 1.2 * math.sin(mins * 0.12)
+            base_humi = 65.0 + 3.0 * math.cos(mins * 0.1)
+            base_light = 750 + 80 * math.sin(mins * 0.15)
+            temp_data.append({"label": labels[idx], "value": round(base_temp + random.uniform(-0.3, 0.3), 1)})
+            humi_data.append({"label": labels[idx], "value": round(base_humi + random.uniform(-1, 1), 1)})
+            light_data.append({"label": labels[idx], "value": max(0, int(base_light + random.uniform(-15, 15)))})
+
+    return {"temp": temp_data, "humi": humi_data, "light": light_data}
+
+
+def get_sensor_alerts_data():
+    """Trả về cảnh báo & nhận định dựa trên xu hướng (mock tạm thời để ghép FE)."""
+    return [
+        {
+            "type": "warning", "title": "Nhiệt độ có xu hướng tăng",
+            "message": "Nhiệt độ trung bình đã tăng 1.2°C so với tuần trước, cần theo dõi để điều chỉnh hệ thống làm mát phù hợp."
+        },
+        {
+            "type": "info", "title": "Độ ẩm trong ngưỡng ổn định",
+            "message": "Độ ẩm dao động từ 65-70%, nằm trong khoảng lý tưởng cho môi trường sống."
+        },
+        {
+            "type": "success", "title": "Ánh sáng đạt chuẩn",
+            "message": "Mức ánh sáng trung bình 840 lux, phù hợp cho hoạt động hàng ngày."
+        },
+    ]
+
+
+# --- REAL DB ANALYTICS CLASS FOR SERVER.PY ---
+
+class DashboardAnalytics:
+    def __init__(self, sensor_collection, danger_collection=None):
+        self.sensor_collection = sensor_collection
+        self.danger_collection = danger_collection
+        self.tz_vn = timezone(timedelta(hours=7))
+
+    async def get_sensor_comparison_data(self):
+        now_vn = datetime.now(self.tz_vn)
+        today_start_str = now_vn.strftime("%Y-%m-%d")
+        
+        # Lấy bản ghi mới nhất
+        latest_cursor = self.sensor_collection.find().sort("time", -1).limit(1)
+        latest_docs = await latest_cursor.to_list(1)
+        if not latest_docs:
+            return {
+                "temp": {"delta": 0, "label": "Chưa có dữ liệu"},
+                "humi": {"delta": 0, "label": "Chưa có dữ liệu"},
+                "light": {"delta": 0, "label": "Chưa có dữ liệu"}
+            }
+        current = latest_docs[0]
+        
+        # TH1: So sánh với trung bình ngày
+        pipeline_today = [
+            {"$match": {"date": today_start_str}},
+            {"$group": {
+                "_id": None,
+                "avg_temp": {"$avg": "$temp"},
+                "avg_humi": {"$avg": "$humi"},
+                "avg_light": {"$avg": "$light"},
+                "count": {"$sum": 1}
+            }}
+        ]
+        today_res = await self.sensor_collection.aggregate(pipeline_today).to_list(1)
+        
+        if today_res and today_res[0]["count"] >= 3:
+            avg_data = today_res[0]
+            return {
+                "temp": {"delta": round(current.get("temp", 0) - avg_data.get("avg_temp", 0), 1), "label": "So với trung bình ngày"},
+                "humi": {"delta": round(current.get("humi", 0) - avg_data.get("avg_humi", 0), 1), "label": "So với trung bình ngày"},
+                "light": {"delta": round(current.get("light", 0) - avg_data.get("avg_light", 0)), "label": "So với trung bình ngày"}
+            }
+            
+        # TH2: So sánh với 5 phút trước
+        five_min_ago = now_vn - timedelta(minutes=5)
+        old_cursor = self.sensor_collection.find({"time": {"$lte": five_min_ago}}).sort("time", -1).limit(1)
+        old_docs = await old_cursor.to_list(1)
+        
+        if old_docs:
+            old = old_docs[0]
+            return {
+                "temp": {"delta": round(current.get("temp", 0) - old.get("temp", 0), 1), "label": "So với 5 phút trước"},
+                "humi": {"delta": round(current.get("humi", 0) - old.get("humi", 0), 1), "label": "So với 5 phút trước"},
+                "light": {"delta": round(current.get("light", 0) - old.get("light", 0)), "label": "So với 5 phút trước"}
+            }
+            
+        # Mặc định chưa có đủ dữ liệu
+        return {
+            "temp": {"delta": 0, "label": "So với trung bình ngày"},
+            "humi": {"delta": 0, "label": "So với trung bình ngày"},
+            "light": {"delta": 0, "label": "So với trung bình ngày"}
+        }
+
+    async def get_realtime_trend_data(self):
+        now_vn = datetime.now(self.tz_vn)
+        intervals = [30, 25, 20, 15, 10, 5, 0]
+        labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
+        
+        res_temp, res_humi, res_light = [], [], []
+
+        for idx, mins in enumerate(intervals):
+            target_time = now_vn - timedelta(minutes=mins)
+            
+            # Lấy bản ghi gần nhất trước hoặc bằng target_time, trong khoảng 3 phút
+            min_bound = target_time - timedelta(minutes=3)
+            cursor = self.sensor_collection.find({
+                "time": {"$gte": min_bound, "$lte": target_time}
+            }).sort("time", -1).limit(1)
+            
+            docs = await cursor.to_list(1)
+            if docs:
+                doc = docs[0]
+                res_temp.append({"label": labels[idx], "value": doc.get("temp", 0)})
+                res_humi.append({"label": labels[idx], "value": doc.get("humi", 0)})
+                res_light.append({"label": labels[idx], "value": doc.get("light", 0)})
+            else:
+                # Fallback: lấy bản ghi mới nhất nếu lưới thời gian không có, để line không bị đứt
+                latest_cursor = self.sensor_collection.find().sort("time", -1).limit(1)
+                latest = await latest_cursor.to_list(1)
+                if latest:
+                    res_temp.append({"label": labels[idx], "value": latest[0].get("temp", 0)})
+                    res_humi.append({"label": labels[idx], "value": latest[0].get("humi", 0)})
+                    res_light.append({"label": labels[idx], "value": latest[0].get("light", 0)})
+                else:
+                    res_temp.append({"label": labels[idx], "value": 0})
+                    res_humi.append({"label": labels[idx], "value": 0})
+                    res_light.append({"label": labels[idx], "value": 0})
+                    
+        return {
+            "temp": res_temp,
+            "humi": res_humi,
+            "light": res_light
+        }
+
+    async def get_sensor_alerts_data(self):
+        alerts = []
+        if self.danger_collection is not None:
+            try:
+                danger_docs = await self.danger_collection.find().sort("time", -1).limit(3).to_list(3)
+                for doc in danger_docs:
+                    t = doc.get("time")
+                    time_str = t.strftime("%H:%M %d/%m") if isinstance(t, datetime) else str(t)
+                    alerts.append({
+                        "type": "warning", 
+                        "title": f"Cảnh báo: {doc.get('type')}",
+                        "message": f"Phát hiện lúc {time_str}. Vui lòng kiểm tra lại hệ thống.\nGiá trị: {doc.get('value', '')}"
+                    })
+            except Exception as e:
+                print(e)
+
+        if len(alerts) < 3:
+            alerts.append({
+                "type": "info", "title": "Độ ẩm hiện tại",
+                "message": "Độ ẩm đang được giám sát từ cảm biến."
+            })
+            alerts.append({
+                "type": "success", "title": "Hệ thống hoạt động",
+                "message": "Cảm biến đang gửi dữ liệu bình thường."
+            })
+            
+        return alerts[:3]
