@@ -541,6 +541,7 @@ input[type=range]::-webkit-slider-runnable-track {
   border-radius: 2px;
 }
 
+
 /* ============ Dual threshold slider (min/max) ============ */
 .dual-threshold-slider {
   position: relative;
@@ -1177,6 +1178,35 @@ input[type=range]::-webkit-slider-runnable-track {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  }
+
+  .sidebar {
+    width: 100%;
+    height: 70px;
+    flex-direction: row;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 1000;
+    border-right: none;
+    border-top: 1px solid var(--border-color);
+    padding: 0;
+    background-color: rgba(22, 27, 34, 0.95);
+    backdrop-filter: blur(10px);
+  }
+
+  .sidebar .logo-section {
+    display: none;
+  }
+
+  .sidebar .nav-links {
+    flex-direction: row;
+    width: 100%;
+    justify-content: space-around;
+    align-items: center;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   .sidebar .nav-item {
     flex-direction: column;
     padding: 10px;
@@ -1245,7 +1275,7 @@ input[type=range]::-webkit-slider-runnable-track {
     width: 24px;
     margin-top: -10px;
   }
-}
+
 
 @media (min-width: 480px) and (max-width: 768px) {
   .stats-grid {
