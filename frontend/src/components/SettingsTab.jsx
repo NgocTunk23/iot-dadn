@@ -16,6 +16,25 @@ export default function SettingsTab() {
           <span className="slider"></span>
         </label>
       </div>
+
+      <div style={{ marginTop: '30px' }}>
+        <button 
+          style={{
+            width: '100%',
+            padding: '12px',
+            backgroundColor: 'rgba(255, 77, 79, 0.1)',
+            color: '#ff4d4f',
+            border: '1px solid #ff4d4f',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          Đăng xuất
+        </button>
+      </div>
     </div>
   );
 }
