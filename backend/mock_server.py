@@ -7,7 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uvicorn
 import random, math
+import time
+from module.module1 import get_sensor_comparison_data, get_realtime_trend_data, get_sensor_alerts_data, record_sensor_reading
 
+MOCK_START_TIME = time.time()
 app = FastAPI()
 
 app.add_middleware(
@@ -94,54 +97,10 @@ mock_scenes = [
 current_index = 0
 
 # ===== DỮ LIỆU XU HƯỚNG TUẦN (giả) =====
-WEEKLY_TREND = {
-    "temp": [
-        {"day": "T2", "value": 28.0},
-        {"day": "T3", "value": 28.5},
-        {"day": "T4", "value": 29.0},
-        {"day": "T5", "value": 28.8},
-        {"day": "T6", "value": 28.2},
-        {"day": "T7", "value": 27.5},
-        {"day": "CN", "value": 27.8},
-    ],
-    "humi": [
-        {"day": "T2", "value": 65.0},
-        {"day": "T3", "value": 68.0},
-        {"day": "T4", "value": 67.0},
-        {"day": "T5", "value": 69.0},
-        {"day": "T6", "value": 71.0},
-        {"day": "T7", "value": 66.0},
-        {"day": "CN", "value": 65.5},
-    ],
-    "light": [
-        {"day": "T2", "value": 810},
-        {"day": "T3", "value": 860},
-        {"day": "T4", "value": 850},
-        {"day": "T5", "value": 880},
-        {"day": "T6", "value": 870},
-        {"day": "T7", "value": 840},
-        {"day": "CN", "value": 820},
-    ],
-}
+# Đã được chuyển sang module1.py
 
 # ===== CẢNH BÁO & NHẬN ĐỊNH =====
-SENSOR_ALERTS = [
-    {
-        "type": "warning",
-        "title": "Nhiệt độ có xu hướng tăng",
-        "message": "Nhiệt độ trung bình đã tăng 1.2°C so với tuần trước, cần theo dõi để điều chỉnh hệ thống làm mát phù hợp."
-    },
-    {
-        "type": "info",
-        "title": "Độ ẩm trong ngưỡng ổn định",
-        "message": "Độ ẩm dao động từ 65-70%, nằm trong khoảng lý tưởng cho môi trường sống."
-    },
-    {
-        "type": "success",
-        "title": "Ánh sáng đạt chuẩn",
-        "message": "Mức ánh sáng trung bình 840 lux, phù hợp cho hoạt động hàng ngày."
-    },
-]
+# Đã được chuyển sang module1.py
 
 
 @app.get("/api/sensor-data")
@@ -149,6 +108,8 @@ async def get_sensor_data():
     global current_index
     item = MOCK_LOGS[current_index % len(MOCK_LOGS)]
     current_index += 1
+    # Ghi nhận vào bộ nhớ tạm cho comparison & realtime trend
+    record_sensor_reading(item["temp"], item["humi"], item["light"])
     return {
         "temp": item["temp"],
         "humi": item["humi"],
@@ -176,61 +137,92 @@ async def get_history_by_date(date: str = Query("2026-03-06")):
     return results
 
 
+# ===== BIẾN ĐỂ BẠN TỰ ĐỔI KHI TEST TRÊN WEB =====
+# Sửa SIMULATE_RUN_MINUTES để giả lập việc server đã chạy bao lâu (tính bằng phút)
+# Ví dụ: 3 (mới chạy 3 phút -> TH3), 6 (đã chạy 6 phút -> TH2), 1500 (đã chạy qua ngày -> TH1)
+# Đặt là None để tính thời gian thực trôi qua kể từ lúc nãy bạn gõ lệnh chạy python mock_server.py
+SIMULATE_RUN_MINUTES = 50
+
+
+def get_elapsed_minutes():
+    if SIMULATE_RUN_MINUTES is not None:
+        return SIMULATE_RUN_MINUTES
+    return (time.time() - MOCK_START_TIME) / 60.0
+
 @app.get("/api/sensor-comparison")
 async def get_sensor_comparison():
-    """Trả về dữ liệu so sánh so với chu kỳ trước (mock)."""
-    return {
-        "temp": {"delta": 1.2, "label": "so với tuần trước"},
-        "humi": {"delta": -2.1, "label": "so với tuần trước"},
-        "light": {"delta": 30, "label": "so với tuần trước"},
-    }
+    """Trả về dữ liệu tổng quan cấu hình mô phỏng theo thời gian."""
+    elapsed = get_elapsed_minutes()
+    
+    if elapsed < 5:
+        # TH3: Hệ thống mới bật, hoàn toàn chưa đủ dữ liệu
+        return {
+            "temp": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+            "humi": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+            "light": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+        }
+    elif elapsed < 1440:
+        # TH2: Không đủ trung bình ngày, quay lại lấy 5 phút trước
+        return {
+            "temp": {"delta": 2.5, "label": "So với 5 phút trước"},
+            "humi": {"delta": -1.5, "label": "So với 5 phút trước"},
+            "light": {"delta": 15, "label": "So với 5 phút trước"},
+        }
+    else:
+        # TH1: Có đủ dữ liệu, so sánh trung bình ngày
+        return {
+            "temp": {"delta": 1.2, "label": "So với trung bình ngày"},
+            "humi": {"delta": -2.1, "label": "So với trung bình ngày"},
+            "light": {"delta": 30, "label": "So với trung bình ngày"},
+        }
 
+@app.get("/api/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu biểu đồ khớp với thời gian chạy thực tế theo mô tả."""
+    elapsed = get_elapsed_minutes()
+    intervals = [30, 25, 20, 15, 10, 5, 0]
+    labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
+    
+    res_temp, res_humi, res_light = [], [], []
+    
+    for idx, mins in enumerate(intervals):
+        if mins > elapsed:
+            # Nếu thời điểm trên đồ thị dài hơn thời gian đã chạy máy -> Value = 0
+            res_temp.append({"label": labels[idx], "value": 0})
+            res_humi.append({"label": labels[idx], "value": 0})
+            res_light.append({"label": labels[idx], "value": 0})
+        else:
+            # Có dữ liệu giả
+            base_temp = 28.5 + 1.2 * math.sin(idx * 0.12)
+            base_humi = 65.0 + 3.0 * math.cos(idx * 0.1)
+            base_light = 750 + 80 * math.sin(idx * 0.15)
+            
+            res_temp.append({"label": labels[idx], "value": round(base_temp + random.uniform(-0.5, 0.5), 1)})
+            res_humi.append({"label": labels[idx], "value": round(base_humi + random.uniform(-1, 1), 1)})
+            res_light.append({"label": labels[idx], "value": max(0, int(base_light + random.uniform(-10, 10)))})
+            
+    return {
+        "temp": res_temp,
+        "humi": res_humi,
+        "light": res_light
+    }
 
 @app.get("/api/weekly-trend")
 async def get_weekly_trend(period: str = Query("week")):
-    """Trả về dữ liệu xu hướng theo chu kỳ."""
-    if period == "month":
-        # 4 tuần trong tháng
-        return {
-            "temp": [{"day": f"Tuần {i}", "value": round(28.0 + random.uniform(-1, 1), 1)} for i in range(1, 5)],
-            "humi": [{"day": f"Tuần {i}", "value": round(65.0 + random.uniform(-3, 3), 1)} for i in range(1, 5)],
-            "light": [{"day": f"Tuần {i}", "value": int(800 + random.uniform(-50, 50))} for i in range(1, 5)],
-        }
-    elif period == "year":
-        # 12 tháng trong năm
-        return {
-            "temp": [{"day": f"Tháng {i}", "value": round(27.0 + math.sin(i)*2, 1)} for i in range(1, 13)],
-            "humi": [{"day": f"Tháng {i}", "value": round(60.0 + math.cos(i)*5, 1)} for i in range(1, 13)],
-            "light": [{"day": f"Tháng {i}", "value": int(750 + math.sin(i)*100)} for i in range(1, 13)],
-        }
-    else:
-        # Default: week (7 ngày)
-        return {
-            "temp": [
-                {"day": "T2", "value": 28.0}, {"day": "T3", "value": 28.5},
-                {"day": "T4", "value": 29.0}, {"day": "T5", "value": 28.8},
-                {"day": "T6", "value": 28.2}, {"day": "T7", "value": 27.5},
-                {"day": "CN", "value": 27.8},
-            ],
-            "humi": [
-                {"day": "T2", "value": 65.0}, {"day": "T3", "value": 68.0},
-                {"day": "T4", "value": 67.0}, {"day": "T5", "value": 69.0},
-                {"day": "T6", "value": 71.0}, {"day": "T7", "value": 66.0},
-                {"day": "CN", "value": 65.5},
-            ],
-            "light": [
-                {"day": "T2", "value": 810}, {"day": "T3", "value": 860},
-                {"day": "T4", "value": 850}, {"day": "T5", "value": 880},
-                {"day": "T6", "value": 870}, {"day": "T7", "value": 840},
-                {"day": "CN", "value": 820},
-            ],
-        }
+    """Legacy endpoint — redirect to realtime."""
+    return get_realtime_trend_data()
+
+
+@app.get("/api/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu xu hướng real-time (30 phút qua)."""
+    return get_realtime_trend_data()
 
 
 @app.get("/api/sensor-alerts")
 async def get_sensor_alerts():
     """Trả về cảnh báo & nhận định dựa trên xu hướng dữ liệu."""
-    return SENSOR_ALERTS
+    return get_sensor_alerts_data()
 
 
 @app.get("/api/scenes")
@@ -286,6 +278,39 @@ async def control_device(payload: dict = Body(...)):
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
     return {"status": "Success"}
+
+import asyncio
+
+last_triggered_minute = ""
+
+async def check_scene_timers():
+    """Background task lặp mỗi 10 giây để kiểm tra và kích hoạt các scene hẹn giờ."""
+    global device_status, last_triggered_minute
+    while True:
+        await asyncio.sleep(10)
+        now_str = datetime.now().strftime("%H:%M")
+        
+        # Tránh trigger nhiều lần trong cùng 1 phút
+        if now_str == last_triggered_minute:
+            continue
+
+        triggered_any = False
+        for scene in mock_scenes:
+            if scene.get("trigger_type") == "timer" and scene.get("trigger_time") == now_str:
+                print(f"\n[AUTO-TRIGGER] Đã đến {now_str}. Tự động kích hoạt: {scene['scene_name']}")
+                for act in scene.get("actions", []):
+                    idx = act["device_id"] - 1
+                    if 0 <= idx < len(device_status):
+                        device_status[idx][1] = act["value"]
+                triggered_any = True
+                
+        if triggered_any:
+            last_triggered_minute = now_str
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(check_scene_timers())
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 
 const API = 'http://localhost:5000/api';
@@ -99,6 +99,7 @@ function MonitorTab({ addToast }) {
   const [thresholds, setThresholds] = useState(null);
   const [logs, setLogs]           = useState([]);
   const [loading, setLoading]     = useState(true);
+  const [showLogs, setShowLogs]   = useState(true);
 
   const SENSOR_META = {
     temp:  { label: 'Nhiệt độ', icon: '🌡️', unit: '°C', color: '#FF9F43' },
@@ -174,85 +175,172 @@ function MonitorTab({ addToast }) {
       {/* Lịch sử cảnh báo */}
       <Card>
         <SectionTitle>📋 Lịch sử cảnh báo gần đây</SectionTitle>
-        {logs.length === 0
-          ? <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px' }}>Chưa có cảnh báo nào.</p>
-          : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {logs.map((log, i) => (
-                <div key={i} style={{
-                  background: 'var(--bg-card-inner)', borderRadius: '10px',
-                  padding: '14px 16px', borderLeft: '4px solid var(--accent-red)',
-                  borderRadius: '0 10px 10px 0'
-                }}>
-                  {/* Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--accent-red)' }}>⚠️ {log.type}</span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {formatVNTime(log.time)}
-                    </span>
-                  </div>
 
-                  {/* Vi phạm ngưỡng */}
-                  {log.violations?.length > 0 && (
-                    <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      {log.violations.map((v, j) => (
-                        <span key={j} style={{ marginRight: '10px' }}>
-                          {SENSOR_META[v.sensor]?.icon} {SENSOR_META[v.sensor]?.label}: {v.value}
-                          {SENSOR_META[v.sensor]?.unit} ({v.threshold === 'max' ? '↑ vượt MAX' : '↓ dưới MIN'} {v.limit})
-                        </span>
-                      ))}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '16px', marginTop: '-10px', gap: '10px' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}>
+            {showLogs ? 'Hiển thị' : 'Ẩn'}
+          </span>
+          <label className="toggle-switch" title="Giật công tắc để bật/tắt hiển thị lịch sử cảnh báo">
+            <input type="checkbox" checked={showLogs} onChange={(e) => setShowLogs(e.target.checked)} />
+            <span className="slider"></span>
+          </label>
+        </div>
+
+        {showLogs ? (
+          logs.length === 0
+            ? <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px' }}>Chưa có cảnh báo nào.</p>
+            : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {logs.map((log, i) => (
+                  <div key={i} style={{
+                    background: 'var(--bg-card-inner)', borderRadius: '10px',
+                    padding: '14px 16px', borderLeft: '4px solid var(--accent-red)',
+                    borderRadius: '0 10px 10px 0'
+                  }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--accent-red)' }}>⚠️ {log.type}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {formatVNTime(log.time)}
+                      </span>
                     </div>
-                  )}
 
-                  {/* Kịch bản tự động */}
-                  {log.triggered_rules?.length > 0 && (
-                    <div style={{
-                      marginTop: '8px', paddingTop: '8px',
-                      borderTop: '1px dashed var(--border-color)', fontSize: '0.82rem'
-                    }}>
-                      {log.triggered_rules.map((rule, ri) => {
-                        const changedItems = rule.changes?.filter(c => c.changed) || [];
-                        return (
-                          <div key={ri} style={{ marginTop: ri > 0 ? '6px' : '0' }}>
-                            <span style={{ color: '#10b981', fontWeight: 600 }}>
-                              ⚡ {rule.rule_name}:
-                            </span>
-                            {changedItems.length === 0 ? (
-                              <span style={{ color: 'var(--text-secondary)', marginLeft: '8px', fontStyle: 'italic' }}>
-                                ℹ️ Không có thay đổi so với trạng thái hiện tại
+                    {/* Vi phạm ngưỡng */}
+                    {log.violations?.length > 0 && (
+                      <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        {log.violations.map((v, j) => (
+                          <span key={j} style={{ marginRight: '10px' }}>
+                            {SENSOR_META[v.sensor]?.icon} {SENSOR_META[v.sensor]?.label}: {v.value}
+                            {SENSOR_META[v.sensor]?.unit} ({v.threshold === 'max' ? '↑ vượt MAX' : '↓ dưới MIN'} {v.limit})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Kịch bản tự động */}
+                    {log.triggered_rules?.length > 0 && (
+                      <div style={{
+                        marginTop: '8px', paddingTop: '8px',
+                        borderTop: '1px dashed var(--border-color)', fontSize: '0.82rem'
+                      }}>
+                        {log.triggered_rules.map((rule, ri) => {
+                          const changedItems = rule.changes?.filter(c => c.changed) || [];
+                          return (
+                            <div key={ri} style={{ marginTop: ri > 0 ? '6px' : '0' }}>
+                              <span style={{ color: '#10b981', fontWeight: 600 }}>
+                                ⚡ {rule.rule_name}:
                               </span>
-                            ) : (
-                              changedItems.map((c, ci) => (
-                                <span key={ci} style={{ color: 'var(--text-secondary)', marginLeft: '8px' }}>
-                                  {c.device_name}:{' '}
-                                  <span style={{ color: 'var(--accent-red)' }}>{fmtDeviceVal(c.from)}</span>
-                                  {' ➜ '}
-                                  <span style={{ color: '#10b981' }}>{fmtDeviceVal(c.to)}</span>
+                              {changedItems.length === 0 ? (
+                                <span style={{ color: 'var(--text-secondary)', marginLeft: '8px', fontStyle: 'italic' }}>
+                                  ℹ️ Không có thay đổi so với trạng thái hiện tại
                                 </span>
-                              ))
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                              ) : (
+                                changedItems.map((c, ci) => (
+                                  <span key={ci} style={{ color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                                    {c.device_name}:{' '}
+                                    <span style={{ color: 'var(--accent-red)' }}>{fmtDeviceVal(c.from)}</span>
+                                    {' ➜ '}
+                                    <span style={{ color: '#10b981' }}>{fmtDeviceVal(c.to)}</span>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                  {/* Không có kịch bản nào */}
-                  {(!log.triggered_rules || log.triggered_rules.length === 0) && log.type !== 'Mất kết nối cảm biến (Quá 30 giây)' && (
-                    <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                      ✅ Không có kịch bản tự động nào được kích hoạt
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                    {/* Không có kịch bản nào */}
+                    {(!log.triggered_rules || log.triggered_rules.length === 0) && log.type !== 'Mất kết nối cảm biến (Quá 30 giây)' && (
+                      <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                        ✅ Không có kịch bản tự động nào được kích hoạt
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+        ) : (
+          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
+            Lịch sử cảnh báo đang bị tắt. Giật công tắc để hiển thị lại.
+          </p>
+        )}
       </Card>
     </>
   );
 }
 
 // ── 2. Cấu hình ngưỡng ────────────────────────────────────────
+function DualThresholdSlider({ sensor, draft, setDraft, setActiveThumb, activeThumb, getNum, clamp }) {
+  const minValRaw = getNum(draft[sensor.key]?.min, sensor.min);
+  const maxValRaw = getNum(draft[sensor.key]?.max, sensor.max);
+  
+  const mMin = clamp(minValRaw, sensor.min, sensor.max);
+  const mMax = clamp(maxValRaw, sensor.min, sensor.max);
+  
+  const activeMin = Math.min(mMin, mMax);
+  const activeMax = Math.max(mMin, mMax);
+
+  const denom = (sensor.max - sensor.min) || 1;
+  const leftPct = ((activeMin - sensor.min) / denom) * 100;
+  const widthPct = ((activeMax - activeMin) / denom) * 100;
+
+  return (
+    <div style={{ marginBottom: '25px', position: 'relative' }}>
+      <div className="dual-threshold-slider">
+        <div className="base-track">
+          <div className="active-track" style={{ left: `${leftPct}%`, width: `${widthPct}%` }} />
+        </div>
+        
+        <input
+          className="dual-thumb dual-thumb--min"
+          type="range"
+          min={sensor.min}
+          max={sensor.max}
+          step="0.1"
+          value={mMin}
+          onMouseDown={() => setActiveThumb('min')}
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            setDraft(prev => ({
+              ...prev,
+              [sensor.key]: { ...prev[sensor.key], min: Math.min(val, mMax) } // Ràng buộc Min <= Max
+            }));
+          }}
+          style={{ 
+            zIndex: activeThumb === 'min' ? 5 : 3 
+          }}
+        />
+        
+        <input
+          className="dual-thumb dual-thumb--max"
+          type="range"
+          min={sensor.min}
+          max={sensor.max}
+          step="0.1"
+          value={mMax}
+          onMouseDown={() => setActiveThumb('max')}
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            setDraft(prev => ({
+              ...prev,
+              [sensor.key]: { ...prev[sensor.key], max: Math.max(val, mMin) } // Ràng buộc Max >= Min
+            }));
+          }}
+          style={{ 
+            zIndex: activeThumb === 'max' ? 5 : 4 
+          }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '25px' }}>
+        <span>Min: {activeMin.toFixed(1)}{sensor.unit}</span>
+        <span>Max: {activeMax.toFixed(1)}{sensor.unit}</span>
+      </div>
+    </div>
+  );
+}
+
 function ThresholdTab({ addToast }) {
   const SENSORS = [
     { key: 'temp',  label: 'Nhiệt độ', icon: '🌡️', unit: '°C', min: -50, max: 500 },
@@ -263,10 +351,20 @@ function ThresholdTab({ addToast }) {
   const [thresholds, setThresholds] = useState({ temp:{min:0,max:40}, humi:{min:20,max:80}, light:{min:0,max:90} });
   const [draft, setDraft]           = useState(null);
   const [saving, setSaving]         = useState(false);
+  const [activeThumb, setActiveThumb] = useState(null);
+
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+  const getNum = (v, fallback) => {
+    const n = typeof v === 'string' ? parseFloat(v) : v;
+    return Number.isFinite(n) ? n : fallback;
+  };
 
   useEffect(() => {
     axios.get(`${API}/thresholds?houseid=HS001`)
-      .then(r => { setThresholds(r.data); setDraft(JSON.parse(JSON.stringify(r.data))); })
+      .then(r => { 
+        setThresholds(r.data); 
+        setDraft(JSON.parse(JSON.stringify(r.data))); 
+      })
       .catch(() => setDraft(JSON.parse(JSON.stringify(thresholds))));
   }, []);
 
@@ -305,32 +403,38 @@ function ThresholdTab({ addToast }) {
       {SENSORS.map(s => (
         <Card key={s.key}>
           <SectionTitle>{s.icon} {s.label} (đơn vị: {s.unit})</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-            {['min','max'].map(bound => (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            {['min', 'max'].map(bound => (
               <div key={bound}>
                 <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   Ngưỡng {bound === 'min' ? 'dưới (Min)' : 'trên (Max)'}
                 </label>
                 <input type="number" style={{ ...inputStyle, width: '100%' }}
                   value={draft[s.key]?.[bound] ?? ''}
-                  onChange={e => setDraft(prev => ({ ...prev, [s.key]: { ...prev[s.key], [bound]: e.target.value } }))} />
+                  onChange={e => {
+                    const val = e.target.value === '' ? '' : parseFloat(e.target.value);
+                    setDraft(prev => ({
+                      ...prev,
+                      [s.key]: { ...prev[s.key], [bound]: val }
+                    }));
+                  }} 
+                />
               </div>
             ))}
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              Phạm vi vật lý: {s.min}{s.unit} – {s.max}{s.unit}
-            </div>
-            <div style={{ height: '6px', borderRadius: '3px', background: 'var(--bg-card-inner)', position: 'relative', overflow: 'hidden' }}>
-              <div style={{
-                position: 'absolute', height: '100%', borderRadius: '3px',
-                background: 'linear-gradient(90deg,var(--accent-blue),var(--accent-orange))',
-                left: `${((parseFloat(draft[s.key]?.min)||0) - s.min) / (s.max - s.min) * 100}%`,
-                width: `${((parseFloat(draft[s.key]?.max)||0) - (parseFloat(draft[s.key]?.min)||0)) / (s.max - s.min) * 100}%`,
-              }} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+
+          {/* Thanh trượt Dual Slider */}
+          <DualThresholdSlider 
+            sensor={s} 
+            draft={draft} 
+            setDraft={setDraft} 
+            activeThumb={activeThumb}
+            setActiveThumb={setActiveThumb}
+            getNum={getNum}
+            clamp={clamp}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
             <button className="btn btn-primary" disabled={saving} onClick={() => handleSave(s.key)}>
               {saving ? 'Đang lưu...' : '💾 Lưu ngưỡng'}
             </button>
@@ -396,9 +500,6 @@ function ChannelTab({ addToast }) {
           <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} placeholder="123456789"
             value={draft.telegram?.chat_id || ''} onChange={e => setField('telegram', 'chat_id', e.target.value)} />
         </InputRow>
-        <div style={{ background: 'rgba(0,209,255,0.06)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-          💡 Lấy Bot Token từ <strong style={{color:'var(--accent-blue)'}}>@BotFather</strong> → Chat ID từ <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
-        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary" disabled={saving === 'telegram'} onClick={() => handleSave('telegram')}>
             {saving === 'telegram' ? 'Đang lưu...' : '💾 Lưu cấu hình'}
@@ -422,9 +523,6 @@ function ChannelTab({ addToast }) {
           <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} type="email" placeholder="recipient@gmail.com"
             value={draft.email?.address || ''} onChange={e => setField('email', 'address', e.target.value)} />
         </InputRow>
-        <div style={{ background: 'rgba(0,209,255,0.06)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-          💡 Gmail sender & password cấu hình trong <code>docker-compose.yml</code> qua biến <strong>GMAIL_SENDER</strong> / <strong>GMAIL_PASSWORD</strong>
-        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary" disabled={saving === 'email'} onClick={() => handleSave('email')}>
             {saving === 'email' ? 'Đang lưu...' : '💾 Lưu cấu hình'}
@@ -451,6 +549,7 @@ const DEVICE_OPTS  = [
   { id: 5, label: '💡 Đèn 5' }, { id: 6, label: '🚪 Servo' },
   { id: 7, label: '🌀 Quạt (0-100%)' },
 ];
+const FAN_LEVELS = [70, 80, 90, 100]; 
 const EMPTY_RULE = {
   name: '', enabled: true,
   condition: { sensor: 'temp', op: 'gt', value: 35 },
@@ -610,12 +709,16 @@ function AutoRuleTab({ addToast }) {
                     </select>
                   )}
                   {isFan && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input type="number" min="0" max="100" style={{ ...inputStyle, width: '80px' }}
-                        value={act.status} onChange={e => setAction(i, 'status', e.target.value)} />
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>%</span>
-                    </div>
-                  )}
+                    <select
+                      style={{ ...selectStyle, width: '130px' }}
+                      value={act.status}
+                      onChange={e => setAction(i, 'status', parseFloat(e.target.value))}
+                    >
+                      {FAN_LEVELS.map(level => (
+                        <option key={level} value={level}>Mức {level}%</option>
+                      ))}
+                    </select>
+                  )} 
                   {draft.actions.length > 1 && (
                     <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => removeAction(i)}>✕</button>
                   )}

@@ -243,13 +243,13 @@ class AlertDispatcher:
 
         # Bật thiết bị báo động
         alert_device_ok = True
-        try:
-            for item in device_status_ref:
-                if item[0] == 7:
-                    item[1] = 100
-        except Exception as e:
-            alert_device_ok = False
-            print(f"[MODULE2][UC002.5] Lỗi kích hoạt thiết bị: {e}")
+        # try:
+        #     for item in device_status_ref:
+        #         if item[0] == 7:
+        #             item[1] = 100
+        # except Exception as e:
+        #     alert_device_ok = False
+        # print(f"[MODULE2][UC002.5] Lỗi kích hoạt thiết bị: {e}")
 
         # Ghi log nguy hiểm — thêm triggered_rules vào
         danger_log = {
@@ -260,7 +260,7 @@ class AlertDispatcher:
             "violations": violations,
             "value": {k: sensor_data.get(k) for k in ("temp", "humi", "light")},
             "alert_device_ok": alert_device_ok,
-            "triggered_rules": triggered_rules or []  # ← LƯU THÊM THÔNG TIN KỊCH BẢN
+            "triggered_rules": triggered_rules or [] 
         }
         try:
             await self.danger_col.insert_one(danger_log)
