@@ -7,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uvicorn
 import random, math
+import time
 from module.module1 import get_sensor_comparison_data, get_realtime_trend_data, get_sensor_alerts_data, record_sensor_reading
 
+MOCK_START_TIME = time.time()
 app = FastAPI()
 
 app.add_middleware(
@@ -135,11 +137,75 @@ async def get_history_by_date(date: str = Query("2026-03-06")):
     return results
 
 
+# ===== BIẾN ĐỂ BẠN TỰ ĐỔI KHI TEST TRÊN WEB =====
+# Sửa SIMULATE_RUN_MINUTES để giả lập việc server đã chạy bao lâu (tính bằng phút)
+# Ví dụ: 3 (mới chạy 3 phút -> TH3), 6 (đã chạy 6 phút -> TH2), 1500 (đã chạy qua ngày -> TH1)
+# Đặt là None để tính thời gian thực trôi qua kể từ lúc nãy bạn gõ lệnh chạy python mock_server.py
+SIMULATE_RUN_MINUTES = 50
+
+
+def get_elapsed_minutes():
+    if SIMULATE_RUN_MINUTES is not None:
+        return SIMULATE_RUN_MINUTES
+    return (time.time() - MOCK_START_TIME) / 60.0
+
 @app.get("/api/sensor-comparison")
 async def get_sensor_comparison():
-    """Trả về dữ liệu so sánh so với chu kỳ trước (mock)."""
-    return get_sensor_comparison_data()
+    """Trả về dữ liệu tổng quan cấu hình mô phỏng theo thời gian."""
+    elapsed = get_elapsed_minutes()
+    
+    if elapsed < 5:
+        # TH3: Hệ thống mới bật, hoàn toàn chưa đủ dữ liệu
+        return {
+            "temp": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+            "humi": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+            "light": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+        }
+    elif elapsed < 1440:
+        # TH2: Không đủ trung bình ngày, quay lại lấy 5 phút trước
+        return {
+            "temp": {"delta": 2.5, "label": "So với 5 phút trước"},
+            "humi": {"delta": -1.5, "label": "So với 5 phút trước"},
+            "light": {"delta": 15, "label": "So với 5 phút trước"},
+        }
+    else:
+        # TH1: Có đủ dữ liệu, so sánh trung bình ngày
+        return {
+            "temp": {"delta": 1.2, "label": "So với trung bình ngày"},
+            "humi": {"delta": -2.1, "label": "So với trung bình ngày"},
+            "light": {"delta": 30, "label": "So với trung bình ngày"},
+        }
 
+@app.get("/api/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu biểu đồ khớp với thời gian chạy thực tế theo mô tả."""
+    elapsed = get_elapsed_minutes()
+    intervals = [30, 25, 20, 15, 10, 5, 0]
+    labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
+    
+    res_temp, res_humi, res_light = [], [], []
+    
+    for idx, mins in enumerate(intervals):
+        if mins > elapsed:
+            # Nếu thời điểm trên đồ thị dài hơn thời gian đã chạy máy -> Value = 0
+            res_temp.append({"label": labels[idx], "value": 0})
+            res_humi.append({"label": labels[idx], "value": 0})
+            res_light.append({"label": labels[idx], "value": 0})
+        else:
+            # Có dữ liệu giả
+            base_temp = 28.5 + 1.2 * math.sin(idx * 0.12)
+            base_humi = 65.0 + 3.0 * math.cos(idx * 0.1)
+            base_light = 750 + 80 * math.sin(idx * 0.15)
+            
+            res_temp.append({"label": labels[idx], "value": round(base_temp + random.uniform(-0.5, 0.5), 1)})
+            res_humi.append({"label": labels[idx], "value": round(base_humi + random.uniform(-1, 1), 1)})
+            res_light.append({"label": labels[idx], "value": max(0, int(base_light + random.uniform(-10, 10)))})
+            
+    return {
+        "temp": res_temp,
+        "humi": res_humi,
+        "light": res_light
+    }
 
 @app.get("/api/weekly-trend")
 async def get_weekly_trend(period: str = Query("week")):

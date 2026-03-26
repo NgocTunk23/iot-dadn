@@ -136,88 +136,117 @@ class DashboardAnalytics:
         now_vn = datetime.now(self.tz_vn)
         today_start_str = now_vn.strftime("%Y-%m-%d")
         
-        # Lấy bản ghi mới nhất
-        latest_cursor = self.sensor_collection.find().sort("time", -1).limit(1)
+        # 1. Đo thời gian hệ thống thật sự chạy bằng cách xem record cũ nhất và mới nhất
+        latest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", -1).limit(1)
         latest_docs = await latest_cursor.to_list(1)
-        if not latest_docs:
+        
+        oldest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", 1).limit(1)
+        oldest_docs = await oldest_cursor.to_list(1)
+        
+        if not latest_docs or not oldest_docs:
             return {
-                "temp": {"delta": 0, "label": "Chưa có dữ liệu"},
-                "humi": {"delta": 0, "label": "Chưa có dữ liệu"},
-                "light": {"delta": 0, "label": "Chưa có dữ liệu"}
+                "temp": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "humi": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "light": {"delta": 0, "label": "Chưa đủ dữ liệu"}
             }
+            
         current = latest_docs[0]
+        oldest = oldest_docs[0]
         
-        # TH1: So sánh với trung bình ngày
-        pipeline_today = [
-            {"$match": {"date": today_start_str}},
-            {"$group": {
-                "_id": None,
-                "avg_temp": {"$avg": "$temp"},
-                "avg_humi": {"$avg": "$humi"},
-                "avg_light": {"$avg": "$light"},
-                "count": {"$sum": 1}
-            }}
-        ]
-        today_res = await self.sensor_collection.aggregate(pipeline_today).to_list(1)
+        diff_minutes = (current["time"] - oldest["time"]).total_seconds() / 60.0
         
-        if today_res and today_res[0]["count"] >= 3:
-            avg_data = today_res[0]
+        if diff_minutes < 4.8:
+            # TH3: Dưới 5 phút
             return {
-                "temp": {"delta": round(current.get("temp", 0) - avg_data.get("avg_temp", 0), 1), "label": "So với trung bình ngày"},
-                "humi": {"delta": round(current.get("humi", 0) - avg_data.get("avg_humi", 0), 1), "label": "So với trung bình ngày"},
-                "light": {"delta": round(current.get("light", 0) - avg_data.get("avg_light", 0)), "label": "So với trung bình ngày"}
+                "temp": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "humi": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "light": {"delta": 0, "label": "Chưa đủ dữ liệu"}
             }
+        elif diff_minutes < 60:
+            # TH2: Đã chạy từ 5 phút đến 1 tiếng
+            five_min_ago = current["time"] - timedelta(minutes=5)
+            old_cursor = self.sensor_collection.find({"time": {"$lte": five_min_ago}}).sort("time", -1).limit(1)
+            old_docs = await old_cursor.to_list(1)
             
-        # TH2: So sánh với 5 phút trước
-        five_min_ago = now_vn - timedelta(minutes=5)
-        old_cursor = self.sensor_collection.find({"time": {"$lte": five_min_ago}}).sort("time", -1).limit(1)
-        old_docs = await old_cursor.to_list(1)
-        
-        if old_docs:
-            old = old_docs[0]
+            if old_docs:
+                old = old_docs[0]
+                return {
+                    "temp": {"delta": round(current.get("temp", 0) - old.get("temp", 0), 1), "label": "So với 5 phút trước"},
+                    "humi": {"delta": round(current.get("humi", 0) - old.get("humi", 0), 1), "label": "So với 5 phút trước"},
+                    "light": {"delta": round(current.get("light", 0) - old.get("light", 0)), "label": "So với 5 phút trước"}
+                }
             return {
-                "temp": {"delta": round(current.get("temp", 0) - old.get("temp", 0), 1), "label": "So với 5 phút trước"},
-                "humi": {"delta": round(current.get("humi", 0) - old.get("humi", 0), 1), "label": "So với 5 phút trước"},
-                "light": {"delta": round(current.get("light", 0) - old.get("light", 0)), "label": "So với 5 phút trước"}
+                "temp": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "humi": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "light": {"delta": 0, "label": "Chưa đủ dữ liệu"}
             }
+        else:
+            # TH1: Chạy qua 1 tiếng
+            pipeline_today = [
+                {"$match": {"date": today_start_str}},
+                {"$group": {
+                    "_id": None,
+                    "avg_temp": {"$avg": "$temp"},
+                    "avg_humi": {"$avg": "$humi"},
+                    "avg_light": {"$avg": "$light"},
+                }}
+            ]
+            today_res = await self.sensor_collection.aggregate(pipeline_today).to_list(1)
             
-        # Mặc định chưa có đủ dữ liệu
-        return {
-            "temp": {"delta": 0, "label": "So với trung bình ngày"},
-            "humi": {"delta": 0, "label": "So với trung bình ngày"},
-            "light": {"delta": 0, "label": "So với trung bình ngày"}
-        }
+            if today_res:
+                avg_data = today_res[0]
+                return {
+                    "temp": {"delta": round(current.get("temp", 0) - avg_data.get("avg_temp", 0), 1), "label": "So với trung bình ngày"},
+                    "humi": {"delta": round(current.get("humi", 0) - avg_data.get("avg_humi", 0), 1), "label": "So với trung bình ngày"},
+                    "light": {"delta": round(current.get("light", 0) - avg_data.get("avg_light", 0)), "label": "So với trung bình ngày"}
+                }
+            return {
+                "temp": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "humi": {"delta": 0, "label": "Chưa đủ dữ liệu"},
+                "light": {"delta": 0, "label": "Chưa đủ dữ liệu"}
+            }
 
     async def get_realtime_trend_data(self):
         now_vn = datetime.now(self.tz_vn)
         intervals = [30, 25, 20, 15, 10, 5, 0]
         labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
         
+        today_start_str = now_vn.strftime("%Y-%m-%d")
+        oldest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", 1).limit(1)
+        oldest_docs = await oldest_cursor.to_list(1)
+        
+        if not oldest_docs:
+            return {
+                "temp": [{"label": lb, "value": 0} for lb in labels],
+                "humi": [{"label": lb, "value": 0} for lb in labels],
+                "light": [{"label": lb, "value": 0} for lb in labels]
+            }
+            
+        oldest_time = oldest_docs[0]["time"]
+        diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
+        
         res_temp, res_humi, res_light = [], [], []
 
         for idx, mins in enumerate(intervals):
-            target_time = now_vn - timedelta(minutes=mins)
-            
-            # Lấy bản ghi gần nhất trước hoặc bằng target_time, trong khoảng 3 phút
-            min_bound = target_time - timedelta(minutes=3)
-            cursor = self.sensor_collection.find({
-                "time": {"$gte": min_bound, "$lte": target_time}
-            }).sort("time", -1).limit(1)
-            
-            docs = await cursor.to_list(1)
-            if docs:
-                doc = docs[0]
-                res_temp.append({"label": labels[idx], "value": doc.get("temp", 0)})
-                res_humi.append({"label": labels[idx], "value": doc.get("humi", 0)})
-                res_light.append({"label": labels[idx], "value": doc.get("light", 0)})
+            # Nếu mốc thời gian ngoài vùng đã chạy máy -> value = 0 (trống trơn để chart ko vẽ lố)
+            if mins > diff_total_minutes + 1: 
+                res_temp.append({"label": labels[idx], "value": 0})
+                res_humi.append({"label": labels[idx], "value": 0})
+                res_light.append({"label": labels[idx], "value": 0})
             else:
-                # Fallback: lấy bản ghi mới nhất nếu lưới thời gian không có, để line không bị đứt
-                latest_cursor = self.sensor_collection.find().sort("time", -1).limit(1)
-                latest = await latest_cursor.to_list(1)
-                if latest:
-                    res_temp.append({"label": labels[idx], "value": latest[0].get("temp", 0)})
-                    res_humi.append({"label": labels[idx], "value": latest[0].get("humi", 0)})
-                    res_light.append({"label": labels[idx], "value": latest[0].get("light", 0)})
+                target_time = now_vn - timedelta(minutes=mins)
+                min_bound = target_time - timedelta(minutes=3)
+                
+                cursor = self.sensor_collection.find({
+                    "time": {"$gte": min_bound, "$lte": target_time}
+                }).sort("time", -1).limit(1)
+                
+                docs = await cursor.to_list(1)
+                if docs:
+                    doc = docs[0]
+                    res_temp.append({"label": labels[idx], "value": doc.get("temp", 0)})
+                    res_humi.append({"label": labels[idx], "value": doc.get("humi", 0)})
+                    res_light.append({"label": labels[idx], "value": doc.get("light", 0)})
                 else:
                     res_temp.append({"label": labels[idx], "value": 0})
                     res_humi.append({"label": labels[idx], "value": 0})
