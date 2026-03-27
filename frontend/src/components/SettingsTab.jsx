@@ -16,19 +16,6 @@ export default function SettingsTab() {
           <span className="slider"></span>
         </label>
       </div>
-
-      <div className="device-item">
-        <div className="device-info">
-          <div className="device-text">
-            <h4>Nhận thông báo khi phát hiện đột nhập</h4>
-            <p>Bật thông báo đẩy về điện thoại</p>
-          </div>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" defaultChecked />
-          <span className="slider"></span>
-        </label>
-      </div>
     </div>
   );
 }

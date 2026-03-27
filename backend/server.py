@@ -413,23 +413,27 @@ async def delete_scene(scene_name: str = Query(...)):
     except Exception as e:
         return {"error": str(e)}
 
+<<<<<<< HEAD
 
 # --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MOCK CHO FRONTEND ---
 import random, math
+=======
+# --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MONGODB ---
+from module.module1 import DashboardAnalytics
+
+dashboard_analytics = DashboardAnalytics(collection, danger_collection)
+>>>>>>> 26962896db25a6eae4099ad3399e6aaea624c840
 
 
 @app.get("/api/sensor-comparison")
 async def get_sensor_comparison():
-    """Trả về dữ liệu so sánh so với chu kỳ trước (mock tạm thời để ghép FE)."""
-    return {
-        "temp": {"delta": 1.2, "label": "so với tuần trước"},
-        "humi": {"delta": -2.1, "label": "so với tuần trước"},
-        "light": {"delta": 30, "label": "so với tuần trước"},
-    }
+    """Trả về dữ liệu so sánh lấy từ DB."""
+    return await dashboard_analytics.get_sensor_comparison_data()
 
 
 @app.get("/api/weekly-trend")
 async def get_weekly_trend(period: str = Query("week")):
+<<<<<<< HEAD
     """Trả về dữ liệu xu hướng theo chu kỳ (mock tạm thời để ghép FE)."""
     if period == "month":
         return {
@@ -491,10 +495,20 @@ async def get_weekly_trend(period: str = Query("week")):
                 {"day": "CN", "value": 820},
             ],
         }
+=======
+    """Legacy endpoint — redirect to realtime."""
+    return await dashboard_analytics.get_realtime_trend_data()
+
+@app.get("/api/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu xu hướng realtime từ DB."""
+    return await dashboard_analytics.get_realtime_trend_data()
+>>>>>>> 26962896db25a6eae4099ad3399e6aaea624c840
 
 
 @app.get("/api/sensor-alerts")
 async def get_sensor_alerts():
+<<<<<<< HEAD
     """Trả về cảnh báo & nhận định dựa trên xu hướng (mock tạm thời để ghép FE)."""
     return [
         {
@@ -513,6 +527,10 @@ async def get_sensor_alerts():
             "message": "Mức ánh sáng trung bình 840 lux, phù hợp cho hoạt động hàng ngày.",
         },
     ]
+=======
+    """Trả về cảnh báo lấy từ collection nguy hiểm."""
+    return await dashboard_analytics.get_sensor_alerts_data()
+>>>>>>> 26962896db25a6eae4099ad3399e6aaea624c840
 
 
 # --- CÁC API KHÁC GIỮ NGUYÊN ---
@@ -576,10 +594,43 @@ async def check_sensor_connection():
                     print(f"Lỗi ghi Module 4 log mất kết nối: {e}")
 
 
+last_triggered_minute = ""
+
+async def check_scene_timers():
+    """Background task lặp mỗi 10 giây để kiểm tra và kích hoạt các scene hẹn giờ."""
+    global device_status, last_triggered_minute
+    while True:
+        await asyncio.sleep(10)
+        tz_vn = timezone(timedelta(hours=7))
+        now_str = datetime.now(tz_vn).strftime("%H:%M")
+        
+        # Tránh trigger nhiều lần trong cùng 1 phút
+        if now_str == last_triggered_minute:
+            continue
+
+        try:
+            # Tìm các kịch bản có trigger_type='timer' và khớp thời gian hiện tại
+            cursor = scenes_collection.find({"trigger_type": "timer", "trigger_time": now_str})
+            scenes = await cursor.to_list(length=100)
+            
+            triggered_any = False
+            for scene in scenes:
+                print(f"\n[AUTO-TRIGGER] Đã đến {now_str}. Tự động kích hoạt: {scene.get('scene_name')}")
+                # Dùng lại hàm helper từ module3
+                device_status = apply_scene_to_status(device_status, scene.get("actions", []))
+                triggered_any = True
+                
+            if triggered_any:
+                last_triggered_minute = now_str
+                print(f"--- Lệnh điều khiển mới sau Auto-Trigger: {device_status} ---")
+        except Exception as e:
+            print(f"Lỗi khi check_scene_timers: {e}")
+
 @app.on_event("startup")
 async def startup_event():
-    # Khởi chạy background task khi server bắt đầu
+    # Khởi chạy các background tasks khi server bắt đầu
     asyncio.create_task(check_sensor_connection())
+    asyncio.create_task(check_scene_timers())
 
 
 # ================================================================
