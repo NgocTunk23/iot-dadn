@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
+# 2 cái lib trên làm j 
 
 # Thứ tự ưu tiên của log level (càng cao càng nghiêm trọng)
 LOG_LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
@@ -10,13 +11,16 @@ class LogManager:
         self.logs_collection = logs_collection
         self.config_collection = config_collection
         self.tz_vn = timezone(timedelta(hours=7))
+#init thì trong hàm có cs 2 tham số là logs_collection và config_collection, đây là 2 collection của MongoDB để lưu log và cấu hình. Ngoài ra còn tạo timezone cho Việt Nam (UTC+7) để đảm bảo timestamp được lưu đúng múi giờ.
+
+
 
     # =============================================
     # HELPER: Lấy log level hiện tại từ DB config
     # =============================================
-    async def _get_current_log_level(self) -> str:
-        config = await self.config_collection.find_one({"type": "logging"})
-        return config.get("level", "INFO") if config else "INFO"
+    async def _get_current_log_level(self) -> str:  #async là j 
+        config = await self.config_collection.find_one({"type": "logging"}) #await là j
+        return config.get("level", "INFO") if config else "INFO"  #config.get level info là j, nếu không có config thì mặc định là INFO
 
     # =============================================
     # UC004.6 - GHI LOG (có check level filter)
