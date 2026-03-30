@@ -261,7 +261,7 @@ export default function useDevices(addToast) {
     if (draftMode && draftMode.id === id) setDraftMode(null);
   };
 
-  // --- Bật/tắt chế độ → POST /api/activate-scene (có retry UC003.3) ---
+// --- Bật/tắt chế độ → POST /api/activate-scene hoặc deactivate-scene (có retry UC003.3) ---
   const toggleMode = async (id, active) => {
     // Nếu active = true, bật chế độ id này và tắt tất cả các chế độ khác
     setModes(prev => prev.map(m => {
@@ -270,24 +270,60 @@ export default function useDevices(addToast) {
       return m;
     }));
 
-    if (active) {
-      const mode = modesRef.current.find(m => m.id === id);
-      if (mode) {
-        try {
-          // UC003.3: Retry tối đa 5 lần
-          await withRetry(async () => {
-            await axios.post(`${API_BASE}/activate-scene`, { scene_name: mode.name });
-          }, 5, 1000);
+    const mode = modesRef.current.find(m => m.id === id);
+    if (!mode) return;
 
-          setDeviceStates(JSON.parse(JSON.stringify(mode.devices)));
-          if (addToast) addToast(`✅ Kích hoạt chế độ "${mode.name}" thành công!`, 'success');
-        } catch (err) {
-          console.error('Lỗi kích hoạt chế độ:', err);
-          // UC003.3: Sau 5 lần thất bại → cảnh báo mất kết nối
-          if (addToast) addToast(`❌ Không thể kích hoạt "${mode.name}" sau 5 lần thử. Kiểm tra kết nối!`, 'error');
-          // Vẫn cập nhật FE state
-          setDeviceStates(JSON.parse(JSON.stringify(mode.devices)));
-        }
+    if (active) {
+      // ================== LOGIC KHI BẬT CHẾ ĐỘ ==================
+      try {
+        // UC003.3: Retry tối đa 5 lần
+        await withRetry(async () => {
+          await axios.post(`${API_BASE}/activate-scene`, { scene_name: mode.name });
+        }, 5, 1000);
+
+        setDeviceStates(JSON.parse(JSON.stringify(mode.devices)));
+        if (addToast) addToast(`✅ Kích hoạt chế độ "${mode.name}" thành công!`, 'success');
+      } catch (err) {
+        console.error('Lỗi kích hoạt chế độ:', err);
+        // UC003.3: Sau 5 lần thất bại → cảnh báo mất kết nối
+        if (addToast) addToast(`❌ Không thể kích hoạt "${mode.name}" sau 5 lần thử. Kiểm tra kết nối!`, 'error');
+        // Vẫn cập nhật FE state
+        setDeviceStates(JSON.parse(JSON.stringify(mode.devices)));
+      }
+    } else {
+      // ================== LOGIC KHI TẮT CHẾ ĐỘ ==================
+      try {
+        await withRetry(async () => {
+          await axios.post(`${API_BASE}/deactivate-scene`, { scene_name: mode.name });
+        }, 5, 1000);
+
+        if (addToast) addToast(`✅ Đã tắt chế độ "${mode.name}". Các thiết bị đã hoàn nguyên!`, 'info');
+
+        // Hàm phụ giúp Frontend tự động đảo ngược trạng thái thiết bị 
+        // (Bật -> Tắt, Quạt/Servo đang quay -> Về 0) để UI phản hồi ngay lập tức
+        const reverseDeviceStates = (devicesObj) => {
+          const reversed = JSON.parse(JSON.stringify(devicesObj));
+          const recursiveReverse = (obj) => {
+            Object.keys(obj).forEach(key => {
+              if (typeof obj[key] === 'boolean' && obj[key] === true) {
+                obj[key] = false;
+              } else if (typeof obj[key] === 'number' && obj[key] > 0) {
+                obj[key] = 0;
+              } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                recursiveReverse(obj[key]);
+              }
+            });
+          };
+          recursiveReverse(reversed);
+          return reversed;
+        };
+
+        // Cập nhật lại giao diện ngay lập tức với trạng thái đã tắt
+        setDeviceStates(reverseDeviceStates(mode.devices));
+
+      } catch (err) {
+        console.error('Lỗi tắt chế độ:', err);
+        if (addToast) addToast(`❌ Không thể tắt "${mode.name}" sau 5 lần thử. Kiểm tra kết nối!`, 'error');
       }
     }
   };

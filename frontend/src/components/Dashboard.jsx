@@ -117,102 +117,105 @@ function TrendChart({ title, subtitle, data, gradientColors, unit, suggestedMin,
   const chartRef = useRef(null);
 
   useEffect(() => {
+    // 1. Kiểm tra data hợp lệ
     if (!data || data.length === 0) return;
+    
+    // 2. CHÚ Ý: Kiểm tra canvas đã được mount vào DOM chưa
+    if (!canvasRef.current) return; 
 
     if (!chartRef.current) {
       const ctx = canvasRef.current.getContext('2d');
 
       // Line gradient (left to right)
       const lineGrad = ctx.createLinearGradient(0, 0, ctx.canvas.width, 0);
-    lineGrad.addColorStop(0, gradientColors[0]);
-    lineGrad.addColorStop(1, gradientColors[1]);
+      lineGrad.addColorStop(0, gradientColors[0]);
+      lineGrad.addColorStop(1, gradientColors[1]);
 
-    // Fill gradient (top to bottom, transparent)
-    const fillGrad = ctx.createLinearGradient(0, 0, 0, 240);
-    fillGrad.addColorStop(0, gradientColors[0].replace(')', ', 0.25)').replace('rgb', 'rgba'));
-    fillGrad.addColorStop(1, gradientColors[1].replace(')', ', 0.02)').replace('rgb', 'rgba'));
+      // Fill gradient (top to bottom, transparent)
+      const fillGrad = ctx.createLinearGradient(0, 0, 0, 240);
+      fillGrad.addColorStop(0, gradientColors[0].replace(')', ', 0.25)').replace('rgb', 'rgba'));
+      fillGrad.addColorStop(1, gradientColors[1].replace(')', ', 0.02)').replace('rgb', 'rgba'));
 
-    chartRef.current = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: data.map(d => d.label),
-        datasets: [{
-          label: title,
-          data: data.map(d => d.value),
-          borderColor: lineGrad,
-          backgroundColor: fillGrad,
-          fill: true,
-          tension: 0.4,
-          pointRadius: 5,
-          pointBackgroundColor: gradientColors[1],
-          pointBorderColor: gradientColors[0],
-          pointHoverRadius: 8,
-          pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: gradientColors[1],
-          pointHoverBorderWidth: 3,
-          borderWidth: 3,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 600, easing: 'easeInOutQuart' },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: 'rgba(13, 17, 23, 0.95)',
-            titleColor: '#fff',
-            bodyColor: gradientColors[1],
-            bodyFont: { size: 14, weight: 'bold' },
-            titleFont: { size: 13 },
-            padding: 12,
-            cornerRadius: 8,
-            displayColors: false,
-            callbacks: {
-              title: (items) => `${items[0].label} phút trước`,
-              label: (item) => `${item.raw}${unit ? ' ' + unit : ''}`,
-            },
-          },
+      chartRef.current = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => d.label), // LƯU Ý BƯỚC 3 BÊN DƯỚI
+          datasets: [{
+            label: title,
+            data: data.map(d => d.value),
+            borderColor: lineGrad,
+            backgroundColor: fillGrad,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 5,
+            pointBackgroundColor: gradientColors[1],
+            pointBorderColor: gradientColors[0],
+            pointHoverRadius: 8,
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: gradientColors[1],
+            pointHoverBorderWidth: 3,
+            borderWidth: 3,
+          }],
         },
-        scales: {
-          x: {
-            title: {
-              display: true,
-              text: 'Thời gian (Phút trước)',
-              color: '#8B949E',
-              font: { size: 11, family: 'Inter, sans-serif', weight: '500' }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false, // YÊU CẦU CSS CỦA THẺ CHA PHẢI CÓ HEIGHT
+          animation: { duration: 600, easing: 'easeInOutQuart' },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(13, 17, 23, 0.95)',
+              titleColor: '#fff',
+              bodyColor: gradientColors[1],
+              bodyFont: { size: 14, weight: 'bold' },
+              titleFont: { size: 13 },
+              padding: 12,
+              cornerRadius: 8,
+              displayColors: false,
+              callbacks: {
+                title: (items) => `${items[0].label} phút trước`,
+                label: (item) => `${item.raw}${unit ? ' ' + unit : ''}`,
+              },
             },
-            ticks: { color: '#8B949E', font: { size: 12, family: 'Inter, sans-serif' } },
-            grid: { color: 'rgba(48, 54, 61, 0.3)', drawBorder: false },
           },
-          y: {
-            title: {
-              display: true,
-              text: `Đơn vị (${unit})`,
-              color: '#8B949E',
-              font: { size: 11, family: 'Inter, sans-serif', weight: '500' }
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: 'Thời gian (Phút trước)',
+                color: '#8B949E',
+                font: { size: 11, family: 'Inter, sans-serif', weight: '500' }
+              },
+              ticks: { color: '#8B949E', font: { size: 12, family: 'Inter, sans-serif' } },
+              grid: { color: 'rgba(48, 54, 61, 0.3)', drawBorder: false },
             },
-            suggestedMin,
-            suggestedMax,
-            ticks: { 
-              color: '#8B949E', 
-              font: { size: 11, family: 'Inter, sans-serif' },
+            y: {
+              title: {
+                display: true,
+                text: `Đơn vị (${unit})`,
+                color: '#8B949E',
+                font: { size: 11, family: 'Inter, sans-serif', weight: '500' }
+              },
+              suggestedMin,
+              suggestedMax,
+              ticks: { 
+                color: '#8B949E', 
+                font: { size: 11, family: 'Inter, sans-serif' },
+              },
+              grid: { color: 'rgba(48, 54, 61, 0.3)', drawBorder: false },
             },
-            grid: { color: 'rgba(48, 54, 61, 0.3)', drawBorder: false },
           },
-        },
-        interaction: { mode: 'index', intersect: false },
-      }
-    });
+          interaction: { mode: 'index', intersect: false },
+        }
+      });
     } else {
-      // Chỉ cập nhật data để trượt (slide) mượt mà
+      // Cập nhật data
       chartRef.current.data.labels = data.map(d => d.label);
       chartRef.current.data.datasets[0].data = data.map(d => d.value);
       chartRef.current.update();
     }
   }, [data, gradientColors, title, unit, suggestedMin, suggestedMax]);
 
-  // Clean up khi component unmount
   useEffect(() => {
     return () => {
       if (chartRef.current) {
@@ -223,12 +226,13 @@ function TrendChart({ title, subtitle, data, gradientColors, unit, suggestedMin,
   }, []);
 
   return (
-    <div className="trend-chart-card">
+    <div className="trend-chart-card" style={{ display: 'flex', flexDirection: 'column' }}>
       <div className="trend-chart-header">
         <h3>{title}</h3>
         <p>{subtitle}</p>
       </div>
-      <div className="trend-chart-body">
+      {/* Sửa lại CSS nội tuyến ở đây để ép cứng chiều cao nếu bạn chưa viết trong file CSS */}
+      <div className="trend-chart-body" style={{ position: 'relative', height: '250px', width: '100%' }}>
         <canvas ref={canvasRef}></canvas>
       </div>
     </div>
@@ -331,9 +335,9 @@ export default function Dashboard({ data }) {
               <LightIcon />
             </div>
           </div>
-          <div className="stat-value" style={{ color: '#ffc107' }}>{data.light} lux</div>
+          <div className="stat-value" style={{ color: '#ffc107' }}>{data.light} % </div>
           {isConnected && comparison?.light && (
-            <StatComparison delta={comparison.light.delta} unit=" lux" label={comparison.light.label} />
+            <StatComparison delta={comparison.light.delta} unit=" %" label={comparison.light.label} />
           )}
         </div>
       </div>
@@ -349,8 +353,8 @@ export default function Dashboard({ data }) {
                 data={trendData.temp}
                 gradientColors={['rgb(255, 159, 67)', 'rgb(255, 107, 107)']}
                 unit="°C"
-                suggestedMin={20}
-                suggestedMax={40}
+                suggestedMin={0}
+                suggestedMax={50}
               />
               <TrendChart
                 title="Xu hướng độ ẩm"
@@ -358,17 +362,17 @@ export default function Dashboard({ data }) {
                 data={trendData.humi}
                 gradientColors={['rgb(0, 209, 255)', 'rgb(0, 119, 255)']}
                 unit="%"
-                suggestedMin={40}
-                suggestedMax={90}
+                suggestedMin={0}
+                suggestedMax={100}
               />
               <TrendChart
                 title="Xu hướng ánh sáng"
                 subtitle="Dữ liệu 30 phút gần nhất"
                 data={trendData.light}
                 gradientColors={['rgb(255, 193, 7)', 'rgb(255, 159, 67)']}
-                unit="lux"
+                unit="%"
                 suggestedMin={0}
-                suggestedMax={1000}
+                suggestedMax={100}
               />
             </div>
           )}
