@@ -123,7 +123,7 @@ function MonitorTab({ addToast }) {
 
   useEffect(() => {
     fetchAll();
-    const t = setInterval(fetchAll, 5000);
+    const t = setInterval(fetchAll, 10000);
     return () => clearInterval(t);
   }, [fetchAll]);
 
