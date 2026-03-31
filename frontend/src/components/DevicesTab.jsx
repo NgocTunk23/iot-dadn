@@ -1,3 +1,6 @@
+import React from 'react';
+import DeviceControls from './DeviceControls'; // Add this import
+
 export default function DevicesTab({
   deviceStates,
   updateDevice,

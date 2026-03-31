@@ -177,11 +177,6 @@ dashboard_analytics = DashboardAnalytics(collection, danger_collection)
 init_module1(dashboard_analytics)
 app.include_router(module1_router)
 
-
-# --- CÁC API KHÁC GIỮ NGUYÊN ---
-
-# --- UC001.3 - Background Task (Đã chuyển sang module1.py) ---
-
 @app.on_event("startup")
 async def startup_event():
     # Khởi chạy các background tasks khi server bắt đầu
