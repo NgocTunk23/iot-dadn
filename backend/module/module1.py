@@ -1,7 +1,50 @@
-import random
+from fastapi import APIRouter, Query
 import math
+import random
 from datetime import datetime, timedelta, timezone
 import time as _time
+
+# --- ROUTER MODULE 1 ---
+router = APIRouter(prefix="/api")
+_dashboard_analytics = None
+
+def init_module1(analytics):
+    global _dashboard_analytics
+    _dashboard_analytics = analytics
+
+# --- ENDPOINTS MODULE 1 ---
+
+@router.get("/sensor-comparison")
+async def get_sensor_comparison():
+    """Trả về dữ liệu so sánh lấy từ DB."""
+    return await _dashboard_analytics.get_sensor_comparison_data()
+
+@router.get("/weekly-trend")
+async def get_weekly_trend(period: str = Query("week")):
+    """Legacy endpoint — redirect to realtime."""
+    return await _dashboard_analytics.get_realtime_trend_data()
+
+@router.get("/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu xu hướng realtime từ DB."""
+    return await _dashboard_analytics.get_realtime_trend_data()
+
+@router.get("/sensor-alerts")
+async def get_sensor_alerts():
+    """Trả về cảnh báo lấy từ collection nguy hiểm."""
+    return await _dashboard_analytics.get_sensor_alerts_data()
+
+@router.get("/history-by-date")
+async def get_history_by_date(date: str = Query("2026-03-09")):
+    """Lấy lịch sử cảm biến theo ngày từ DB."""
+    try:
+        cursor = _dashboard_analytics.sensor_collection.find({"date": date}).sort("_id", 1)
+        results = await cursor.to_list(length=100)
+        for item in results:
+            item["_id"] = str(item["_id"])
+        return results
+    except Exception as e:
+        return {"error": str(e)}
 
 # --- IN-MEMORY SENSOR HISTORY (for mock comparison & realtime trend) ---
 # Mỗi entry: {"timestamp": float, "temp": float, "humi": float, "light": int}
