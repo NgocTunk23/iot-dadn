@@ -30,22 +30,18 @@ scenes_collection = db.Mode        # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
 init_module3(scene_manager)
 
-# --- BIẾN TOÀN CỤC ---
-latest_sensor_data = {}
+# Biến toàn cục từ module được chia sẻ
 # Biến phụ để so sánh sự thay đổi log
 last_device_status = {item[0]: item[1] for item in shared_device_status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
-# Biến UC001.3
-last_sensor_update_time = None
-is_sensor_connected = False
-connection_timeout_seconds = 30
+# Biến toàn cục khác được giữ lại nếu cần
 
 # --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
-    global latest_sensor_data, last_device_status, is_danger_global
+    global last_device_status, is_danger_global
     tz_vn = timezone(timedelta(hours=7))
     now_vn = datetime.now(tz_vn).replace(tzinfo=None)#!
     
@@ -63,13 +59,13 @@ async def handle_data(payload: dict = Body(...)):
     
     try:
         await collection.insert_one(sensor_entry)
-        latest_sensor_data = payload
         
-        # UC001.3: Cập nhật connection status
-        global last_sensor_update_time, is_sensor_connected
-        last_sensor_update_time = now_vn
-        if not is_sensor_connected:
-            is_sensor_connected = True
+        import module.module1 as module1_mod
+        module1_mod.update_latest_sensor_data(payload)
+        
+        # UC001.3: Cập nhật connection status (Ủy quyền cho module1)
+        import module.module1 as module1_mod
+        if module1_mod.update_sensor_connection(now_vn):
             print("--- Cảm biến đã KẾT NỐI lại ---")
             
         print(f"--- Đã nhận dữ liệu từ Yolobit (House {house_id}) lúc: {now_vn.strftime('%H:%M:%S')} ---")
@@ -149,24 +145,6 @@ async def handle_data(payload: dict = Body(...)):
         print(f"Lỗi DB: {e}")
     return {"status": "Success"}
 
-@app.get("/api/sensor-data")# ? NÀY LÀ HIỂN THỊ DASH BOARD CHỨ ÉO PHẢI FE CỦA MÌNH, FE NẰM TRONG APP.jsx
-async def get_latest_data():
-    """
-    UC001.2 - Xem thông số môi trường
-    Trả về dữ liệu môi trường mới nhất cho giao diện web.
-    """
-    if not latest_sensor_data:
-        return {"temp": "--", "humi": "--", "light": "--", "time": "Chờ...", "connected": is_sensor_connected}
-    
-    data_to_send = latest_sensor_data.copy()
-    if "_id" in data_to_send:
-        data_to_send["_id"] = str(data_to_send["_id"])
-    #! Gửi thêm trạng thái thiết bị hiện tại cho Dashboard React
-    data_to_send["numberdevice"] = module3.device_status
-    # Gửi trạng thái kết nối
-    data_to_send["connected"] = is_sensor_connected
-    return data_to_send
-
 # --- ENDPOINT MỚI (ĐỂ ĐIỀU KHIỂN) ---
 
 #! Yolobit sẽ gọi GET vào đây để lấy lệnh
@@ -202,47 +180,13 @@ app.include_router(module1_router)
 
 # --- CÁC API KHÁC GIỮ NGUYÊN ---
 
-# --- UC001.3 - Background Task Kiểm tra Mất kết nối ---
-import asyncio
-
-async def check_sensor_connection():
-    """
-    UC001.3 - Cảnh báo mất kết nối
-    Kiểm tra định kỳ mỗi 5 giây. Nếu quá 30 giây không có dữ liệu, đánh dấu mất kết nối và ghi log nguy hiểm.
-    """
-    global is_sensor_connected, last_sensor_update_time
-    while True:
-        await asyncio.sleep(5)
-        if last_sensor_update_time and is_sensor_connected:
-            tz_vn = timezone(timedelta(hours=7))
-            now_vn = datetime.now(tz_vn)
-            diff = (now_vn - last_sensor_update_time).total_seconds()
-            
-            if diff > connection_timeout_seconds:
-                is_sensor_connected = False
-                print(f"--- !!! CẢNH BÁO: Mất kết nối cảm biến (quá {connection_timeout_seconds}s) !!! ---")
-                
-                # Ghi log nguy hiểm
-                danger_data = {
-                    "_id": now_vn,
-                    "time": now_vn,
-                    "houseid": "HS001",
-                    "type": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
-                    "value": {}
-                }
-                try:
-                    await danger_collection.insert_one(danger_data)
-                    print("--- Đã lưu log mất kết nối vào database ---")
-                except Exception as e:
-                    print(f"Lỗi ghi log mất kết nối: {e}")
-
-                except Exception as e:
-                    print(f"Lỗi ghi log mất kết nối: {e}")
+# --- UC001.3 - Background Task (Đã chuyển sang module1.py) ---
 
 @app.on_event("startup")
 async def startup_event():
     # Khởi chạy các background tasks khi server bắt đầu
-    asyncio.create_task(check_sensor_connection())
+    import module.module1 as module1_mod
+    module1_mod.start_monitoring()
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=5000)
