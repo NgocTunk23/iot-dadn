@@ -291,7 +291,7 @@ class DashboardAnalytics:
                     
                     # 1. Xử lý múi giờ Việt Nam
                     if isinstance(t, datetime):
-                        vn_time = t + timedelta(hours=7)
+                        vn_time = t
                         time_str = vn_time.strftime("%H:%M %d/%m")
                     else:
                         time_str = str(t)
