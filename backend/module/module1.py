@@ -133,7 +133,7 @@ class DashboardAnalytics:
         self.tz_vn = timezone(timedelta(hours=7))
 
     async def get_sensor_comparison_data(self):
-        now_vn = datetime.now(self.tz_vn)
+        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         today_start_str = now_vn.strftime("%Y-%m-%d")
         
         # 1. Đo thời gian hệ thống thật sự chạy bằng cách xem record cũ nhất và mới nhất
@@ -207,7 +207,8 @@ class DashboardAnalytics:
             }
 
     async def get_realtime_trend_data(self):
-        now_vn = datetime.now(self.tz_vn)
+        # 1. ĐÃ SỬA: Thêm .replace(tzinfo=None) để khớp với DB
+        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         intervals = [30, 25, 20, 15, 10, 5, 0]
         labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
         
@@ -226,30 +227,18 @@ class DashboardAnalytics:
                 
             oldest_time = oldest_docs[0]["time"]
             
-            # --- FIX TIMEZONE HOÀN CHỈNH ---
-            # Để trừ thời gian lấy diff_total_minutes, ta phải kiểm tra DB trả về loại datetime nào
-            if oldest_time.tzinfo is None:
-                # Nếu DB lưu kiểu Naive (Pymongo mặc định lưu Naive UTC)
-                now_utc = datetime.utcnow()
-                diff_total_minutes = (now_utc - oldest_time).total_seconds() / 60.0
-            else:
-                # Nếu DB lưu kiểu Aware (có múi giờ)
-                diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
+            # 2. ĐÃ SỬA: Xoá bỏ khối code check tzinfo cũ, trừ trực tiếp cực kỳ đơn giản
+            diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
             
             res_temp, res_humi, res_light = [], [], []
 
             for idx, mins in enumerate(intervals):
-                # Nếu mốc thời gian ngoài vùng đã chạy máy -> value = 0 (trống trơn để chart ko vẽ lố)
                 if mins > diff_total_minutes + 1: 
                     res_temp.append({"label": labels[idx], "value": 0})
                     res_humi.append({"label": labels[idx], "value": 0})
                     res_light.append({"label": labels[idx], "value": 0})
                 else:
-                    # LƯU Ý QUAN TRỌNG: Khi Query DB, ta PHẢI DÙNG now_vn (có gắn múi giờ)
-                    # Pymongo sẽ tự động convert sang UTC để match đúng với DB
                     target_time = now_vn - timedelta(minutes=mins)
-                    
-                    # Mở rộng khoảng tìm kiếm lùi về 5 phút để chắc chắn quét trúng dữ liệu
                     min_bound = target_time - timedelta(minutes=5)
                     
                     cursor = self.sensor_collection.find({
