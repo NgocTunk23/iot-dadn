@@ -133,7 +133,7 @@ class DashboardAnalytics:
         self.tz_vn = timezone(timedelta(hours=7))
 
     async def get_sensor_comparison_data(self):
-        now_vn = datetime.now(self.tz_vn)
+        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         today_start_str = now_vn.strftime("%Y-%m-%d")
         
         # 1. Đo thời gian hệ thống thật sự chạy bằng cách xem record cũ nhất và mới nhất
@@ -207,56 +207,68 @@ class DashboardAnalytics:
             }
 
     async def get_realtime_trend_data(self):
-        now_vn = datetime.now(self.tz_vn)
+        # 1. ĐÃ SỬA: Thêm .replace(tzinfo=None) để khớp với DB
+        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         intervals = [30, 25, 20, 15, 10, 5, 0]
         labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
         
         today_start_str = now_vn.strftime("%Y-%m-%d")
-        oldest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", 1).limit(1)
-        oldest_docs = await oldest_cursor.to_list(1)
         
-        if not oldest_docs:
+        try:
+            oldest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", 1).limit(1)
+            oldest_docs = await oldest_cursor.to_list(1)
+            
+            if not oldest_docs:
+                return {
+                    "temp": [{"label": lb, "value": 0} for lb in labels],
+                    "humi": [{"label": lb, "value": 0} for lb in labels],
+                    "light": [{"label": lb, "value": 0} for lb in labels]
+                }
+                
+            oldest_time = oldest_docs[0]["time"]
+            
+            # 2. ĐÃ SỬA: Xoá bỏ khối code check tzinfo cũ, trừ trực tiếp cực kỳ đơn giản
+            diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
+            
+            res_temp, res_humi, res_light = [], [], []
+
+            for idx, mins in enumerate(intervals):
+                if mins > diff_total_minutes + 1: 
+                    res_temp.append({"label": labels[idx], "value": 0})
+                    res_humi.append({"label": labels[idx], "value": 0})
+                    res_light.append({"label": labels[idx], "value": 0})
+                else:
+                    target_time = now_vn - timedelta(minutes=mins)
+                    min_bound = target_time - timedelta(minutes=5)
+                    
+                    cursor = self.sensor_collection.find({
+                        "time": {"$gte": min_bound, "$lte": target_time}
+                    }).sort("time", -1).limit(1)
+                    
+                    docs = await cursor.to_list(1)
+                    if docs:
+                        doc = docs[0]
+                        res_temp.append({"label": labels[idx], "value": doc.get("temp", 0)})
+                        res_humi.append({"label": labels[idx], "value": doc.get("humi", 0)})
+                        res_light.append({"label": labels[idx], "value": doc.get("light", 0)})
+                    else:
+                        res_temp.append({"label": labels[idx], "value": 0})
+                        res_humi.append({"label": labels[idx], "value": 0})
+                        res_light.append({"label": labels[idx], "value": 0})
+                        
+            return {
+                "temp": res_temp,
+                "humi": res_humi,
+                "light": res_light
+            }
+            
+        except Exception as e:
+            print(f"[LỖI REALTIME-TREND]: {e}")
             return {
                 "temp": [{"label": lb, "value": 0} for lb in labels],
                 "humi": [{"label": lb, "value": 0} for lb in labels],
                 "light": [{"label": lb, "value": 0} for lb in labels]
             }
-            
-        oldest_time = oldest_docs[0]["time"]
-        diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
-        
-        res_temp, res_humi, res_light = [], [], []
-
-        for idx, mins in enumerate(intervals):
-            # Nếu mốc thời gian ngoài vùng đã chạy máy -> value = 0 (trống trơn để chart ko vẽ lố)
-            if mins > diff_total_minutes + 1: 
-                res_temp.append({"label": labels[idx], "value": 0})
-                res_humi.append({"label": labels[idx], "value": 0})
-                res_light.append({"label": labels[idx], "value": 0})
-            else:
-                target_time = now_vn - timedelta(minutes=mins)
-                min_bound = target_time - timedelta(minutes=3)
-                
-                cursor = self.sensor_collection.find({
-                    "time": {"$gte": min_bound, "$lte": target_time}
-                }).sort("time", -1).limit(1)
-                
-                docs = await cursor.to_list(1)
-                if docs:
-                    doc = docs[0]
-                    res_temp.append({"label": labels[idx], "value": doc.get("temp", 0)})
-                    res_humi.append({"label": labels[idx], "value": doc.get("humi", 0)})
-                    res_light.append({"label": labels[idx], "value": doc.get("light", 0)})
-                else:
-                    res_temp.append({"label": labels[idx], "value": 0})
-                    res_humi.append({"label": labels[idx], "value": 0})
-                    res_light.append({"label": labels[idx], "value": 0})
-                    
-        return {
-            "temp": res_temp,
-            "humi": res_humi,
-            "light": res_light
-        }
 
     async def get_sensor_alerts_data(self):
         alerts = []
@@ -265,14 +277,32 @@ class DashboardAnalytics:
                 danger_docs = await self.danger_collection.find().sort("time", -1).limit(3).to_list(3)
                 for doc in danger_docs:
                     t = doc.get("time")
-                    time_str = t.strftime("%H:%M %d/%m") if isinstance(t, datetime) else str(t)
+                    
+                    # 1. Xử lý múi giờ Việt Nam
+                    if isinstance(t, datetime):
+                        vn_time = t
+                        time_str = vn_time.strftime("%H:%M %d/%m")
+                    else:
+                        time_str = str(t)
+                    
+                    # 2. Xử lý bóc tách giá trị cảm biến để hiển thị đẹp hơn
+                    val = doc.get('value', {})
+                    if isinstance(val, dict):
+                        # Lấy giá trị, nếu thiếu thì để '--' cho an toàn
+                        temp = val.get('temp', '--')
+                        humi = val.get('humi', '--')
+                        light = val.get('light', '--')
+                        sensor_detail = f"Nhiệt độ: {temp} độ C, Độ ẩm: {humi} %, Ánh sáng: {light}%"
+                    else:
+                        sensor_detail = str(val)
+
                     alerts.append({
                         "type": "warning", 
                         "title": f"Cảnh báo: {doc.get('type')}",
-                        "message": f"Phát hiện lúc {time_str}. Vui lòng kiểm tra lại hệ thống.\nGiá trị: {doc.get('value', '')}"
+                        "message": f"Phát hiện lúc {time_str}. Vui lòng kiểm tra lại hệ thống. {sensor_detail}"
                     })
             except Exception as e:
-                print(e)
+                print(f"Lỗi lấy cảnh báo: {e}")
 
         if len(alerts) < 3:
             alerts.append({

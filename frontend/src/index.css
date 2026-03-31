@@ -274,7 +274,8 @@ body {
 /* ============ Trend Charts Grid ============ */
 .trend-charts-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  /* Tự động chia 3 cột trên laptop, tự động rớt xuống 1 cột trên điện thoại */
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
   margin-bottom: 30px;
 }
@@ -313,8 +314,8 @@ body {
 .trend-chart-body {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 400px;
+  height: 260px; /* Ép cứng chiều cao vừa phải để không bị lố màn hình laptop */
+  /* Xóa dòng aspect-ratio và max-height cũ để chart tự do co giãn bề ngang */
 }
 
 /* ============ Alerts & Nhận định ============ */

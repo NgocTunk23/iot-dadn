@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # from fastapi import FastAPI, Body, Query
 # from fastapi.responses import HTMLResponse
 # from fastapi.middleware.cors import CORSMiddleware
@@ -106,6 +107,8 @@
 #     uvicorn.run(app, host='0.0.0.0', port=5000)
 
 
+=======
+>>>>>>> main
 from fastapi import FastAPI, Body, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -130,10 +133,17 @@ app.add_middleware(
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://db:27017")
 client = AsyncIOMotorClient(MONGO_URL)
 db = client.iot_database
+<<<<<<< HEAD
 collection = db.sensor_history
 danger_collection = db.danger_logs  # Bảng log nguy hiểm
 device_log_collection = db.device_logs  # Bảng log thiết bị
 scenes_collection = db.scenes  # Bảng kịch bản
+=======
+collection = db.Sensor_history
+danger_collection = db.Danger_log   # Bảng log nguy hiểm
+device_log_collection = db.Device_log # Bảng log thiết bị
+scenes_collection = db.Mode        # Bảng kịch bản
+>>>>>>> main
 scene_manager = SceneManager(scenes_collection)
 
 # Module 4 - Logging & Analysis
@@ -170,8 +180,13 @@ connection_timeout_seconds = 30
 async def handle_data(payload: dict = Body(...)):
     global latest_sensor_data, last_device_status, is_danger_global
     tz_vn = timezone(timedelta(hours=7))
+<<<<<<< HEAD
     now_vn = datetime.now(tz_vn)
 
+=======
+    now_vn = datetime.now(tz_vn).replace(tzinfo=None)#!
+    
+>>>>>>> main
     # Payload từ Yolobit main3.py có dạng:
     # { houseid: "HS001", temp: 30, humi: 60, light: 50, numberdevices: [{numberdevice: 1, status: True}, ...] }
     house_id = payload.get("houseid", "HS001")
@@ -386,6 +401,57 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
     )
     return {"status": "Success", "new_commands": device_status}
 
+<<<<<<< HEAD
+=======
+@app.post("/api/deactivate-scene")
+async def deactivate_scene_endpoint(payload: dict = Body(...)):
+    global device_status
+    try:
+        scene_name = payload.get("scene_name")
+        if not scene_name:
+            return {"status": "Error", "message": "Missing scene_name"}, 400
+            
+        actions = await scene_manager.get_scene_actions(scene_name)
+        if actions is None:
+            return {"status": "Error", "message": "Scene not found"}, 404
+            
+        # Tạo danh sách hành động đảo ngược an toàn
+        reversed_actions = []
+        for item in actions:
+            dev_id = None
+            state = None
+            
+            # Xử lý thông minh: Nếu DB lưu dạng List (ví dụ: [1, True])
+            if isinstance(item, list) and len(item) >= 2:
+                dev_id = item[0]
+                state = item[1]
+            # Xử lý thông minh: Nếu DB lưu dạng Object/Dict (ví dụ: {"numberdevice": 1, "status": True})
+            elif isinstance(item, dict):
+                dev_id = item.get("numberdevice", item.get("device_id", item.get("id")))
+                state = item.get("status", item.get("value"))
+
+            if dev_id is None or state is None:
+                continue
+
+            # Nếu kịch bản yêu cầu Bật (True) -> Ta Tắt (False)
+            if isinstance(state, bool) and state == True:
+                reversed_actions.append({"device_id": dev_id, "value": False})
+            # Nếu kịch bản yêu cầu Quạt/Servo chạy số > 0 -> Ta đưa về 0 (Tắt)
+            elif isinstance(state, int) and not isinstance(state, bool) and state > 0:
+                reversed_actions.append({"device_id": dev_id, "value": 0})
+
+        # Cập nhật lại lệnh cho hệ thống
+        device_status = apply_scene_to_status(device_status, reversed_actions)
+        print(f"--- Tắt kịch bản '{scene_name}'. Lệnh mới: {device_status} ---")
+        
+        return {"status": "Success", "new_commands": device_status}
+
+    except Exception as e:
+        # In lỗi thực sự ra Terminal Backend để dễ kiểm tra
+        print(f"[LỖI DEACTIVATE-SCENE CRASH]: {e}")
+        # Trả về mã lỗi thân thiện để React không bị dính lỗi CORS
+        return {"status": "Error", "message": f"Server Error: {str(e)}"}, 500
+>>>>>>> main
 
 @app.get("/api/scenes")
 async def get_all_scenes():

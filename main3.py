@@ -18,7 +18,7 @@ HOUSEID = "HS001"
 
 tiny_rgb = RGBLed(pin16.pin, 4) 
 aiot_dht20 = DHT20()
-aiot_lcd1602 = LCD1602()
+# aiot_lcd1602 = LCD1602()
 event_manager.reset()
 
 # ! THÊM MỚI: BỘ NHỚ TRẠNG THÁI THỰC TẾ CỦA YOLOBIT
@@ -66,30 +66,32 @@ def on_event_timer_callback_send_data():
 # --------------------------------------
 
 
-#? --- HÀM KIỂM TRA VÀ GHI LOG CẢM BIẾN CHUYỂN ĐỘNG (PIR) ---
 def check_and_log_motion():
     global pir_trigger_time
-    current_time = time.ticks_ms() # Lấy thời gian hiện tại
+    current_time = time.ticks_ms()
     
     if pin1.read_digital() == 1:
-        # Có người -> Bật đèn và đánh dấu thời điểm bật
-        tiny_rgb.show(1, hex_to_rgb("#ffffff"))
-        current_device_status[1] = True
-        pir_trigger_time = current_time 
+        # Có người -> Bật đèn và RESET lại mốc 10 giây
+        if current_device_status[1] == False:
+            print("PIR: Phát hiện chuyển động -> Bật đèn 1")
+            tiny_rgb.show(1, hex_to_rgb("#ffffff"))
+            current_device_status[1] = True
+        
+        pir_trigger_time = current_time # Luôn cập nhật mốc thời gian khi còn người
     else:
-        # Không có người -> Kiểm tra xem đã qua 10s chưa?
-        # time.ticks_diff tính khoảng cách giữa hiện tại và lúc bật
-        if time.ticks_diff(current_time, pir_trigger_time) > 10000:
-            tiny_rgb.show(1, hex_to_rgb('#000000'))
-            current_device_status[1] = False
-# -----------------------------------------------------------------------------------------
+        # Không có người -> Kiểm tra xem đã hết 10s kể từ lần cuối thấy người chưa
+        if current_device_status[1] == True:
+            if time.ticks_diff(current_time, pir_trigger_time) > 10000:
+                tiny_rgb.show(1, hex_to_rgb('#000000'))
+                current_device_status[1] = False
+                print("PIR: Đã hết 10s yên tĩnh -> Tắt đèn 1")
 
 
 #? --- HÀM ĐỊNH TUYẾN & ĐIỀU KHIỂN THIẾT BỊ ---
 def check_devices(number, status):
     
     # --- Nhóm 1: Các đèn LED (ID: 1, 2, 3, 4) ---
-    if number in [1, 2, 3, 4]:#! ĐỂ SỐ 1 cho có chứ không có thanh nào truyền cho nó id 1 thì 10 năm nó bật nên khỏi cũng được
+    if number in [2, 3, 4]:#! ĐỂ SỐ 1 cho có chứ không có thanh nào truyền cho nó id 1 thì 10 năm nó bật nên khỏi cũng được
         # Nếu trạng thái gửi xuống khác với trạng thái hiện tại thì mới thực thi
         if current_device_status[number] != status:
             if status == True:
@@ -169,27 +171,27 @@ while True:
 
 
     # --- CẬP NHẬT LCD (MỖI 5 GIÂY MỘT LẦN) ---
-    if time.ticks_diff(time.ticks_ms(), last_lcd_update) > 5000:
-        if 'is_danger_alert' in locals() and is_danger_alert:
-            aiot_lcd1602.clear()
-            aiot_lcd1602.move_to(0, 0)
-            aiot_lcd1602.putstr('! NGUY HIEM !')
-        else:
-            aiot_dht20.read_dht20()
+    # if time.ticks_diff(time.ticks_ms(), last_lcd_update) > 5000:
+    #     if 'is_danger_alert' in locals() and is_danger_alert:
+    #         aiot_lcd1602.clear()
+    #         aiot_lcd1602.move_to(0, 0)
+    #         aiot_lcd1602.putstr('! NGUY HIEM !')
+    #     else:
+    #         aiot_dht20.read_dht20()
             
-            # Đưa con trỏ về đầu dòng và in, CỘNG THÊM KHOẢNG TRẮNG ("  ") ở cuối 
-            # để lấp đi các ký tự thừa của lần in trước mà không cần dùng hàm clear()
-            aiot_lcd1602.move_to(0, 0)
-            aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()) + '   ')
+    #         # Đưa con trỏ về đầu dòng và in, CỘNG THÊM KHOẢNG TRẮNG ("  ") ở cuối 
+    #         # để lấp đi các ký tự thừa của lần in trước mà không cần dùng hàm clear()
+    #         aiot_lcd1602.move_to(0, 0)
+    #         aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()) + '   ')
             
-            aiot_lcd1602.move_to(8, 0)
-            aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()) + '   ')
+    #         aiot_lcd1602.move_to(8, 0)
+    #         aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()) + '   ')
             
-            aiot_lcd1602.move_to(0, 1)
-            aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)) + '   ')
+    #         aiot_lcd1602.move_to(0, 1)
+    #         aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)) + '   ')
             
-        # Reset lại mốc thời gian
-        last_lcd_update = time.ticks_ms()
+    #     # Reset lại mốc thời gian
+    #     last_lcd_update = time.ticks_ms()
 
     mqtt.check_message()
     event_manager.run()
