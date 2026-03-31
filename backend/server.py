@@ -5,7 +5,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
-from module.module3 import SceneManager, apply_scene_to_status
+from module.module3 import SceneManager, init_module3, router as module3_router, device_status as shared_device_status
+import module.module3 as module3
+from module.module1 import DashboardAnalytics, init_module1, router as module1_router
 
 app = FastAPI()
 
@@ -26,13 +28,12 @@ danger_collection = db.Danger_log   # Bảng log nguy hiểm
 device_log_collection = db.Device_log # Bảng log thiết bị
 scenes_collection = db.Mode        # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
+init_module3(scene_manager)
 
 # --- BIẾN TOÀN CỤC ---
 latest_sensor_data = {}
-#! MẶC ĐỊNH LỆNH BE: 7 thiết bị (Đèn 1-5, Servo 6, Quạt 7)
-device_status = [[1, False], [2, False], [3, False], [4, False], [5, False], [6, 0], [7, 0]]
 # Biến phụ để so sánh sự thay đổi log
-last_device_status = {}
+last_device_status = {item[0]: item[1] for item in shared_device_status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
@@ -107,6 +108,14 @@ async def handle_data(payload: dict = Body(...)):
             # key của dict last_device_status là dev_num
             if last_device_status.get(dev_num) != stat:
                 
+                # Kiểm tra xem đây có phải là chống trộm tự động bật thiết bị 1 không?
+                # (Thiết bị 1 bật nhưng Backend không hề ra lệnh bật trước đó)
+                cmd_dict = {item[0]: item[1] for item in module3.device_status}
+                if dev_num == 1 and stat == True and cmd_dict.get(1) == False:
+                    reason_str = "do hệ thống tự động bật (chống trộm)"
+                else:
+                    reason_str = "do người dùng bật thủ công"
+
                 # Format ID: ISODate + number ví dụ 2026-03-09T05:55:25.836Z1
                 timestamp_str = common_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
                 dev_id_in_db = f"{timestamp_str}{dev_num}"
@@ -117,7 +126,7 @@ async def handle_data(payload: dict = Body(...)):
                     "houseid": house_id,
                     "numberdevice": dev_num,
                     "status": stat,
-                    "reason": "Yolobit tự động cập nhật hoặc User bấm"
+                    "reason": reason_str
                 }
                 
                 await device_log_collection.update_one(
@@ -126,8 +135,15 @@ async def handle_data(payload: dict = Body(...)):
                     upsert=True
                 )
                 
+                # Đồng bộ lại Backend nếu là chống trộm tự động bật đèn 1
+                if reason_str == "do hệ thống tự động bật (chống trộm)":
+                    for i, item in enumerate(module3.device_status):
+                        if item[0] == 1:
+                            module3.device_status[i][1] = True
+                            break
+
                 last_device_status[dev_num] = stat
-                print(f"--- Đã ghi Log thiết bị ID {dev_num} thay đổi thành {stat} ---")
+                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
 
     except Exception as e:
         print(f"Lỗi DB: {e}")
@@ -146,7 +162,7 @@ async def get_latest_data():
     if "_id" in data_to_send:
         data_to_send["_id"] = str(data_to_send["_id"])
     #! Gửi thêm trạng thái thiết bị hiện tại cho Dashboard React
-    data_to_send["numberdevice"] = device_status
+    data_to_send["numberdevice"] = module3.device_status
     # Gửi trạng thái kết nối
     data_to_send["connected"] = is_sensor_connected
     return data_to_send
@@ -157,7 +173,7 @@ async def get_latest_data():
 @app.get("/api/get-commands")
 async def get_commands():
     # Trả về format mới: dict -> array of objects
-    commands_array = [{"numberdevice": item[0], "status": item[1]} for item in device_status]
+    commands_array = [{"numberdevice": item[0], "status": item[1]} for item in module3.device_status]
     return {
         "numberdevices": commands_array,
         "is_danger": is_danger_global # Push cờ nguy hiểm xuống Yolobit
@@ -167,158 +183,24 @@ async def get_commands():
 #! Frontend hoặc File khác gọi POST vào đây để thay đổi trạng thái
 @app.post("/api/control")
 async def update_control(payload: dict = Body(...)):
-    global device_status
     # Nhận dữ liệu: {"commands": [[2, True], [6, 85]]}
     new_cmd = payload.get("commands")
     if new_cmd:
-        device_status = new_cmd
-        print(f"--- Lệnh điều khiển mới: {device_status} ---")
+        module3.device_status = new_cmd
+        print(f"--- Lệnh điều khiển mới: {module3.device_status} ---")
         return {"status": "Updated"}
     return {"status": "Error"}, 400
 
-# --- API KỊCH BẢN (MODULE 3) ---
+# --- INCLUDE ROUTER MODULE 3 ---
+app.include_router(module3_router)
 
-@app.post("/api/scenes")
-async def create_scene(payload: dict = Body(...)):
-    scene_name = payload.get("scene_name")
-    actions = payload.get("actions")
-    trigger_type = payload.get("trigger_type", "manual")
-    trigger_time = payload.get("trigger_time", "")
-    
-    if not scene_name or not actions:
-         return {"status": "Error", "message": "Missing scene_name or actions"}, 400
-         
-    res = await scene_manager.setup_scene(scene_name, actions, trigger_type, trigger_time)
-    if res["status"] == "success":
-        return res
-    return res, 500
-
-@app.post("/api/activate-scene")
-async def activate_scene_endpoint(payload: dict = Body(...)):
-    global device_status
-    scene_name = payload.get("scene_name")
-    if not scene_name:
-        return {"status": "Error", "message": "Missing scene_name"}, 400
-        
-    actions = await scene_manager.get_scene_actions(scene_name)
-    if actions is None:
-        return {"status": "Error", "message": "Scene not found"}, 404
-        
-    device_status = apply_scene_to_status(device_status, actions)
-    print(f"--- Kích hoạt kịch bản '{scene_name}'. Lệnh mới: {device_status} ---")
-    return {"status": "Success", "new_commands": device_status}
-
-@app.post("/api/deactivate-scene")
-async def deactivate_scene_endpoint(payload: dict = Body(...)):
-    global device_status
-    try:
-        scene_name = payload.get("scene_name")
-        if not scene_name:
-            return {"status": "Error", "message": "Missing scene_name"}, 400
-            
-        actions = await scene_manager.get_scene_actions(scene_name)
-        if actions is None:
-            return {"status": "Error", "message": "Scene not found"}, 404
-            
-        # Tạo danh sách hành động đảo ngược an toàn
-        reversed_actions = []
-        for item in actions:
-            dev_id = None
-            state = None
-            
-            # Xử lý thông minh: Nếu DB lưu dạng List (ví dụ: [1, True])
-            if isinstance(item, list) and len(item) >= 2:
-                dev_id = item[0]
-                state = item[1]
-            # Xử lý thông minh: Nếu DB lưu dạng Object/Dict (ví dụ: {"numberdevice": 1, "status": True})
-            elif isinstance(item, dict):
-                dev_id = item.get("numberdevice", item.get("device_id", item.get("id")))
-                state = item.get("status", item.get("value"))
-
-            if dev_id is None or state is None:
-                continue
-
-            # Nếu kịch bản yêu cầu Bật (True) -> Ta Tắt (False)
-            if isinstance(state, bool) and state == True:
-                reversed_actions.append({"device_id": dev_id, "value": False})
-            # Nếu kịch bản yêu cầu Quạt/Servo chạy số > 0 -> Ta đưa về 0 (Tắt)
-            elif isinstance(state, int) and not isinstance(state, bool) and state > 0:
-                reversed_actions.append({"device_id": dev_id, "value": 0})
-
-        # Cập nhật lại lệnh cho hệ thống
-        device_status = apply_scene_to_status(device_status, reversed_actions)
-        print(f"--- Tắt kịch bản '{scene_name}'. Lệnh mới: {device_status} ---")
-        
-        return {"status": "Success", "new_commands": device_status}
-
-    except Exception as e:
-        # In lỗi thực sự ra Terminal Backend để dễ kiểm tra
-        print(f"[LỖI DEACTIVATE-SCENE CRASH]: {e}")
-        # Trả về mã lỗi thân thiện để React không bị dính lỗi CORS
-        return {"status": "Error", "message": f"Server Error: {str(e)}"}, 500
-
-@app.get("/api/scenes")
-async def get_all_scenes():
-    """Lấy danh sách tất cả chế độ/kịch bản đã lưu."""
-    try:
-        cursor = scenes_collection.find({})
-        results = await cursor.to_list(length=100)
-        for item in results:
-            item["_id"] = str(item["_id"])
-            if "updated_at" in item:
-                item["updated_at"] = str(item["updated_at"])
-        return results
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.delete("/api/scenes")
-async def delete_scene(scene_name: str = Query(...)):
-    """Xóa một chế độ/kịch bản theo tên."""
-    try:
-        result = await scenes_collection.delete_one({"scene_name": scene_name})
-        if result.deleted_count > 0:
-            return {"status": "Deleted", "scene_name": scene_name}
-        return {"status": "Not Found"}
-    except Exception as e:
-        return {"error": str(e)}
-
-# --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MONGODB ---
-from module.module1 import DashboardAnalytics
-
+# --- PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) ---
 dashboard_analytics = DashboardAnalytics(collection, danger_collection)
-
-@app.get("/api/sensor-comparison")
-async def get_sensor_comparison():
-    """Trả về dữ liệu so sánh lấy từ DB."""
-    return await dashboard_analytics.get_sensor_comparison_data()
-
-@app.get("/api/weekly-trend")
-async def get_weekly_trend(period: str = Query("week")):
-    """Legacy endpoint — redirect to realtime."""
-    return await dashboard_analytics.get_realtime_trend_data()
-
-@app.get("/api/realtime-trend")
-async def get_realtime_trend():
-    """Trả về dữ liệu xu hướng realtime từ DB."""
-    return await dashboard_analytics.get_realtime_trend_data()
-
-@app.get("/api/sensor-alerts")
-async def get_sensor_alerts():
-    """Trả về cảnh báo lấy từ collection nguy hiểm."""
-    return await dashboard_analytics.get_sensor_alerts_data()
+init_module1(dashboard_analytics)
+app.include_router(module1_router)
 
 
 # --- CÁC API KHÁC GIỮ NGUYÊN ---
-@app.get("/api/history-by-date")
-async def get_history_by_date(date: str = Query("2026-03-09")):
-    try:
-        cursor = collection.find({"date": date}).sort("_id", 1)
-        results = await cursor.to_list(length=100)
-        for item in results:
-            item["_id"] = str(item["_id"])
-        return results
-    except Exception as e:
-        return {"error": str(e)}
 
 # --- UC001.3 - Background Task Kiểm tra Mất kết nối ---
 import asyncio
@@ -354,43 +236,13 @@ async def check_sensor_connection():
                 except Exception as e:
                     print(f"Lỗi ghi log mất kết nối: {e}")
 
-last_triggered_minute = ""
-
-async def check_scene_timers():
-    """Background task lặp mỗi 10 giây để kiểm tra và kích hoạt các scene hẹn giờ."""
-    global device_status, last_triggered_minute
-    while True:
-        await asyncio.sleep(10)
-        tz_vn = timezone(timedelta(hours=7))
-        now_str = datetime.now(tz_vn).strftime("%H:%M")
-        
-        # Tránh trigger nhiều lần trong cùng 1 phút
-        if now_str == last_triggered_minute:
-            continue
-
-        try:
-            # Tìm các kịch bản có trigger_type='timer' và khớp thời gian hiện tại
-            cursor = scenes_collection.find({"trigger_type": "timer", "trigger_time": now_str})
-            scenes = await cursor.to_list(length=100)
-            
-            triggered_any = False
-            for scene in scenes:
-                print(f"\n[AUTO-TRIGGER] Đã đến {now_str}. Tự động kích hoạt: {scene.get('scene_name')}")
-                # Dùng lại hàm helper từ module3
-                device_status = apply_scene_to_status(device_status, scene.get("actions", []))
-                triggered_any = True
-                
-            if triggered_any:
-                last_triggered_minute = now_str
-                print(f"--- Lệnh điều khiển mới sau Auto-Trigger: {device_status} ---")
-        except Exception as e:
-            print(f"Lỗi khi check_scene_timers: {e}")
+                except Exception as e:
+                    print(f"Lỗi ghi log mất kết nối: {e}")
 
 @app.on_event("startup")
 async def startup_event():
     # Khởi chạy các background tasks khi server bắt đầu
     asyncio.create_task(check_sensor_connection())
-    asyncio.create_task(check_scene_timers())
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=5000)

@@ -103,7 +103,12 @@ async function withRetry(fn, maxRetries = 5, delayMs = 1000) {
 export default function useDevices(addToast) {
   const [deviceStates, setDeviceStates] = useState(DEFAULT_DEVICE_STATES);
   const [modes, setModes] = useState([]);
+  
+  // --- STATE CHO DRAG & DROP ---
   const [draftMode, setDraftMode] = useState(null);
+  const [availableDevices, setAvailableDevices] = useState([]);
+  const [selectedDevices, setSelectedDevices] = useState([]);
+
   const modesRef = useRef(modes);
   modesRef.current = modes;
 
@@ -130,19 +135,17 @@ export default function useDevices(addToast) {
     });
   }, [syncToBackend]);
 
-  // --- Load danh sách scenes từ BE khi mount ---
+  // --- Load danh sách modes từ BE khi mount ---
   useEffect(() => {
-    const loadScenes = async () => {
+    const loadModes = async () => {
       try {
         const res = await axios.get(`${API_BASE}/scenes`);
         if (Array.isArray(res.data)) {
-          const loaded = res.data.map(scene => ({
-            id: scene._id || scene.scene_name,
-            name: scene.scene_name,
-            active: false,
-            triggerType: scene.trigger_type || 'manual',
-            triggerTime: scene.trigger_time || '',
-            devices: sceneActionsToFEState(scene.actions || []),
+          const loaded = res.data.map(m => ({
+            id: m.modeid || m._id,
+            name: m.name || 'Không tên',
+            active: m.isactive || false,
+            action: m.action || []
           }));
           setModes(loaded);
         }
@@ -164,178 +167,197 @@ export default function useDevices(addToast) {
     };
 
     loadDeviceStatus();
-    loadScenes();
+    loadModes();
   }, []);
 
-  // --- Tạo chế độ mới ---
+  // --- LOGIC DRAG & DROP ---
+
+  const ALL_DEVICE_KEYS = [
+    { key: 'light1', label: 'Đèn 1', type: 'switch', id: 1 },
+    { key: 'light2', label: 'Đèn 2', type: 'switch', id: 2 },
+    { key: 'light3', label: 'Đèn 3', type: 'switch', id: 3 },
+    { key: 'light4', label: 'Đèn 4', type: 'switch', id: 4 },
+    { key: 'light5', label: 'Đèn 5', type: 'switch', id: 5 },
+    { key: 'servo', label: 'Cửa (Servo)', type: 'servo', id: 6 },
+    { key: 'fan', label: 'Quạt', type: 'fan', id: 7 },
+  ];
+
   const startCreateMode = () => {
-    setDraftMode({
-      id: Date.now(),
-      name: '',
-      active: false,
-      triggerType: 'manual',
-      triggerTime: '',
-      devices: JSON.parse(JSON.stringify(deviceStates)),
-    });
+    setDraftMode({ name: '', isactive: false });
+    setAvailableDevices([...ALL_DEVICE_KEYS]);
+    setSelectedDevices([]);
   };
 
   const startEditMode = (mode) => {
-    setDraftMode(JSON.parse(JSON.stringify(mode)));
+    setDraftMode({ ...mode });
+    const selectedIds = mode.action.map(a => a.numberdevice);
+    setSelectedDevices(ALL_DEVICE_KEYS.filter(d => selectedIds.includes(d.id)).map(d => {
+      const act = mode.action.find(a => a.numberdevice === d.id);
+      let value = act.status;
+      // Convert value to internal FE state format
+      let state = value;
+      if (d.key === 'servo') state = value >= 45 ? 'open' : 'close';
+      if (d.key === 'fan') state = PERCENT_TO_FAN_LEVEL[value] || 0;
+      if (d.key.startsWith('light')) state = { state: !!value, brightness: 50 };
+      
+      return { ...d, state };
+    }));
+    setAvailableDevices(ALL_DEVICE_KEYS.filter(d => !selectedIds.includes(d.id)));
   };
 
   const cancelEditMode = () => {
     setDraftMode(null);
   };
 
-  // --- Lưu chế độ → POST /api/scenes (có validation) ---
   const saveMode = async () => {
-    if (!draftMode) return;
-
-    // UC003.2: Kiểm tra tên rỗng
-    if (!draftMode.name.trim()) {
-      if (addToast) addToast('Tên chế độ không được để trống!', 'error');
+    if (!draftMode || !draftMode.name.trim()) {
+      if (addToast) addToast('Vui lòng nhập tên chế độ!', 'error');
       return;
     }
 
-    // Kiểm tra giờ hợp lệ nếu hẹn giờ
-    if (draftMode.triggerType === 'timer' && !draftMode.triggerTime) {
-      if (addToast) addToast('Vui lòng chọn thời gian hẹn giờ!', 'error');
+    if (selectedDevices.length === 0) {
+      if (addToast) addToast('Vui lòng chọn ít nhất một thiết bị!', 'error');
       return;
     }
 
-    // UC003.2: Kiểm tra trùng tên (chỉ khi tạo mới, không phải chỉnh sửa)
-    const isNewMode = !modesRef.current.find(m => m.id === draftMode.id);
-    if (isNewMode) {
-      const duplicateName = modesRef.current.find(m => m.name.toLowerCase() === draftMode.name.trim().toLowerCase());
-      if (duplicateName) {
-        if (addToast) addToast(`Chế độ "${draftMode.name}" đã tồn tại! Vui lòng đổi tên khác.`, 'error');
-        return;
-      }
-    }
-
-    // UC003.2: Kiểm tra ít nhất 1 thiết bị phải bật
-    if (countActiveDevices(draftMode.devices) === 0) {
-      if (addToast) addToast('Phải bật ít nhất 1 thiết bị trong chế độ!', 'error');
-      return;
-    }
+    // Chuyển đổi selectedDevices sang mảng action cho Backend
+    const action = selectedDevices.map(d => {
+      let status = d.state;
+      if (d.key === 'servo') status = d.state === 'open' ? 90 : 0;
+      if (d.key === 'fan') status = FAN_LEVEL_TO_PERCENT[d.state] || 0;
+      if (d.key.startsWith('light')) status = d.state.state;
+      
+      return { numberdevice: d.id, status };
+    });
 
     try {
-      const actions = feStateToSceneActions(draftMode.devices);
       await axios.post(`${API_BASE}/scenes`, {
-        scene_name: draftMode.name.trim(),
-        trigger_type: draftMode.triggerType,
-        trigger_time: draftMode.triggerType === 'timer' ? draftMode.triggerTime : '',
-        actions,
+        name: draftMode.name.trim(),
+        action,
+        isactive: false
       });
 
-      setModes(prev => {
-        const existing = prev.find(m => m.name === draftMode.name || m.id === draftMode.id);
-        if (existing) {
-          return prev.map(m => (m.name === draftMode.name || m.id === draftMode.id) ? { ...draftMode, id: existing.id } : m);
-        } else {
-          return [...prev, draftMode];
-        }
-      });
+      // Reload danh sách
+      const res = await axios.get(`${API_BASE}/scenes`);
+      setModes(res.data.map(m => ({
+        id: m.modeid || m._id,
+        name: m.name || 'Không tên',
+        active: m.isactive || false,
+        action: m.action || []
+      })));
+
       setDraftMode(null);
-      if (addToast) addToast(`Đã lưu chế độ "${draftMode.name}" thành công!`, 'success');
+      if (addToast) addToast('Đã lưu chế độ thành công!', 'success');
     } catch (err) {
       console.error('Lỗi lưu chế độ:', err);
-      if (addToast) addToast('Không thể lưu chế độ. Kiểm tra kết nối Backend.', 'error');
+      if (addToast) addToast('Lỗi khi lưu chế độ!', 'error');
     }
   };
 
-  // --- Xóa chế độ → DELETE /api/scenes ---
   const deleteMode = async (id) => {
-    const mode = modesRef.current.find(m => m.id === id);
+    const mode = modes.find(m => m.id === id);
     if (!mode) return;
-
     try {
-      await axios.delete(`${API_BASE}/scenes`, { params: { scene_name: mode.name } });
-      if (addToast) addToast(`Đã xóa chế độ "${mode.name}".`, 'info');
+      await axios.delete(`${API_BASE}/scenes`, { params: { name: mode.name } });
+      setModes(prev => prev.filter(m => m.id !== id));
+      if (addToast) addToast('Đã xóa chế độ!', 'info');
     } catch (err) {
       console.error('Lỗi xóa chế độ:', err);
-      if (addToast) addToast('Không thể xóa chế độ. Kiểm tra kết nối Backend.', 'error');
     }
-
-    setModes(prev => prev.filter(m => m.id !== id));
-    if (draftMode && draftMode.id === id) setDraftMode(null);
   };
 
-// --- Bật/tắt chế độ → POST /api/activate-scene hoặc deactivate-scene (có retry UC003.3) ---
+  // --- KÍCH HOẠT CHẾ ĐỘ + VALIDATION TRÙNG THIẾT BỊ ---
   const toggleMode = async (id, active) => {
-    // Nếu active = true, bật chế độ id này và tắt tất cả các chế độ khác
-    setModes(prev => prev.map(m => {
-      if (m.id === id) return { ...m, active };
-      if (active) return { ...m, active: false };
-      return m;
-    }));
-
-    const mode = modesRef.current.find(m => m.id === id);
-    if (!mode) return;
+    const targetMode = modes.find(m => m.id === id);
+    if (!targetMode) return;
 
     if (active) {
-      // ================== LOGIC KHI BẬT CHẾ ĐỘ ==================
-      try {
-        // UC003.3: Retry tối đa 5 lần
-        await withRetry(async () => {
-          await axios.post(`${API_BASE}/activate-scene`, { scene_name: mode.name });
-        }, 5, 1000);
+      // KIỂM TRA TRÙNG THIẾT BỊ (Conflict Detection)
+      const targetDeviceIds = targetMode.action.map(a => a.numberdevice);
+      const activeModes = modes.filter(m => m.active && m.id !== id);
+      
+      const conflicts = [];
+      activeModes.forEach(m => {
+        const mDeviceIds = m.action.map(a => a.numberdevice);
+        const overlap = targetDeviceIds.filter(id => mDeviceIds.includes(id));
+        if (overlap.length > 0) {
+          conflicts.push(m.name);
+        }
+      });
 
-        setDeviceStates(JSON.parse(JSON.stringify(mode.devices)));
-        if (addToast) addToast(`✅ Kích hoạt chế độ "${mode.name}" thành công!`, 'success');
+      if (conflicts.length > 0) {
+        if (addToast) addToast(`⚠️ Không thể bật vì thiết bị bị trùng với các chế độ: ${conflicts.join(', ')}`, 'warning');
+        return;
+      }
+
+      try {
+        await axios.post(`${API_BASE}/activate-scene`, { name: targetMode.name });
+        setModes(prev => prev.map(m => m.id === id ? { ...m, active: true } : m));
+        // Cập nhật state thiết bị cục bộ cho UI mượt
+        setDeviceStates(prev => {
+          let next = { ...prev };
+          targetMode.action.forEach(act => {
+            const beVal = act.status;
+            let feVal = beVal;
+            if (act.numberdevice === 6) feVal = beVal >= 45 ? 'open' : 'close';
+            if (act.numberdevice === 7) feVal = PERCENT_TO_FAN_LEVEL[beVal] || 0;
+            if (act.numberdevice <= 5) feVal = { state: !!beVal, brightness: 50 };
+            
+            const keys = ['light1', 'light2', 'light3', 'light4', 'light5', 'servo', 'fan'];
+            next[keys[act.numberdevice - 1]] = feVal;
+          });
+          return next;
+        });
       } catch (err) {
-        console.error('Lỗi kích hoạt chế độ:', err);
-        // UC003.3: Sau 5 lần thất bại → cảnh báo mất kết nối
-        if (addToast) addToast(`❌ Không thể kích hoạt "${mode.name}" sau 5 lần thử. Kiểm tra kết nối!`, 'error');
-        // Vẫn cập nhật FE state
-        setDeviceStates(JSON.parse(JSON.stringify(mode.devices)));
+        console.error('Lỗi kích hoạt:', err);
       }
     } else {
-      // ================== LOGIC KHI TẮT CHẾ ĐỘ ==================
       try {
-        await withRetry(async () => {
-          await axios.post(`${API_BASE}/deactivate-scene`, { scene_name: mode.name });
-        }, 5, 1000);
-
-        if (addToast) addToast(`✅ Đã tắt chế độ "${mode.name}". Các thiết bị đã hoàn nguyên!`, 'info');
-
-        // Hàm phụ giúp Frontend tự động đảo ngược trạng thái thiết bị 
-        // (Bật -> Tắt, Quạt/Servo đang quay -> Về 0) để UI phản hồi ngay lập tức
-        const reverseDeviceStates = (devicesObj) => {
-          const reversed = JSON.parse(JSON.stringify(devicesObj));
-          const recursiveReverse = (obj) => {
-            Object.keys(obj).forEach(key => {
-              if (typeof obj[key] === 'boolean' && obj[key] === true) {
-                obj[key] = false;
-              } else if (typeof obj[key] === 'number' && obj[key] > 0) {
-                obj[key] = 0;
-              } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                recursiveReverse(obj[key]);
-              }
-            });
-          };
-          recursiveReverse(reversed);
-          return reversed;
-        };
-
-        // Cập nhật lại giao diện ngay lập tức với trạng thái đã tắt
-        setDeviceStates(reverseDeviceStates(mode.devices));
-
+        await axios.post(`${API_BASE}/deactivate-scene`, { name: targetMode.name });
+        setModes(prev => prev.map(m => m.id === id ? { ...m, active: false } : m));
       } catch (err) {
         console.error('Lỗi tắt chế độ:', err);
-        if (addToast) addToast(`❌ Không thể tắt "${mode.name}" sau 5 lần thử. Kiểm tra kết nối!`, 'error');
       }
     }
   };
 
-  const updateDraftDevice = (key, field, value) => {
-    if (!draftMode) return;
-    setDraftMode(prev => ({
-      ...prev,
-      devices: {
-        ...prev.devices,
-        [key]: field ? { ...prev.devices[key], [field]: value } : value,
-      },
+  const onDragStart = (e, device) => {
+    e.dataTransfer.setData('device', JSON.stringify(device));
+  };
+
+  const onDropToSelected = (e) => {
+    e.preventDefault();
+    const device = JSON.parse(e.dataTransfer.getData('device'));
+    if (selectedDevices.find(d => d.id === device.id)) return;
+
+    // Khởi tạo trạng thái mặc định cho thiết bị khi được chọn vào kịch bản
+    let initialState = false;
+    if (device.key === 'servo') initialState = 'close';
+    if (device.key === 'fan') initialState = 0;
+    if (device.key.startsWith('light')) initialState = { state: false, brightness: 50 };
+
+    setSelectedDevices(prev => [...prev, { ...device, state: initialState }]);
+    setAvailableDevices(prev => prev.filter(d => d.id !== device.id));
+  };
+
+  const onDropToAvailable = (e) => {
+    e.preventDefault();
+    const device = JSON.parse(e.dataTransfer.getData('device'));
+    if (availableDevices.find(d => d.id === device.id)) return;
+
+    setAvailableDevices(prev => [...prev, device]);
+    setSelectedDevices(prev => prev.filter(d => d.id !== device.id));
+  };
+
+  const updateDraftDevice = (id, field, value) => {
+    setSelectedDevices(prev => prev.map(d => {
+      if (d.id === id) {
+        return {
+          ...d,
+          state: field ? { ...d.state, [field]: value } : value
+        };
+      }
+      return d;
     }));
   };
 
@@ -351,6 +373,11 @@ export default function useDevices(addToast) {
     saveMode,
     deleteMode,
     toggleMode,
-    updateDraftDevice,
+    availableDevices,
+    selectedDevices,
+    onDragStart,
+    onDropToSelected,
+    onDropToAvailable,
+    updateDraftDevice
   };
 }
