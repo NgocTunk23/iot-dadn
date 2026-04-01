@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import LogSection from '../components/LogSection';
 import {
   Chart,
   LineController,
@@ -31,13 +32,13 @@ const ALERT_COLORS = {
 /* ======================== SVG ICONS ======================== */
 const TempIcon = () => (
   <svg className="stat-svg-icon stat-svg-icon--temp" viewBox="0 0 40 58" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="12" y="2" width="16" height="38" rx="8" stroke="url(#tempGrad)" strokeWidth="2.5"/>
-    <circle cx="20" cy="46" r="10" stroke="url(#tempGrad)" strokeWidth="2.5"/>
-    <rect className="thermo-fill" x="17" y="14" width="6" height="28" rx="3" fill="url(#tempGrad)"/>
-    <circle cx="20" cy="46" r="6" fill="url(#tempGrad)"/>
+    <rect x="12" y="2" width="16" height="38" rx="8" stroke="url(#tempGrad)" strokeWidth="2.5" />
+    <circle cx="20" cy="46" r="10" stroke="url(#tempGrad)" strokeWidth="2.5" />
+    <rect className="thermo-fill" x="17" y="14" width="6" height="28" rx="3" fill="url(#tempGrad)" />
+    <circle cx="20" cy="46" r="6" fill="url(#tempGrad)" />
     <defs>
       <linearGradient id="tempGrad" x1="20" y1="0" x2="20" y2="58" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#FF9F43"/><stop offset="1" stopColor="#FF6B6B"/>
+        <stop stopColor="#FF9F43" /><stop offset="1" stopColor="#FF6B6B" />
       </linearGradient>
     </defs>
   </svg>
@@ -50,10 +51,10 @@ const HumiIcon = () => (
     <ellipse className="humi-shine" cx="16" cy="34" rx="5" ry="8" fill="rgba(255,255,255,0.15)" />
     <defs>
       <linearGradient id="humiGrad" x1="22" y1="4" x2="22" y2="52" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#00D1FF"/><stop offset="1" stopColor="#0077FF"/>
+        <stop stopColor="#00D1FF" /><stop offset="1" stopColor="#0077FF" />
       </linearGradient>
       <linearGradient id="humiFill" x1="22" y1="4" x2="22" y2="52" gradientUnits="userSpaceOnUse">
-        <stop stopColor="rgba(0,209,255,0.1)"/><stop offset="1" stopColor="rgba(0,119,255,0.2)"/>
+        <stop stopColor="rgba(0,209,255,0.1)" /><stop offset="1" stopColor="rgba(0,119,255,0.2)" />
       </linearGradient>
     </defs>
   </svg>
@@ -61,19 +62,19 @@ const HumiIcon = () => (
 
 const LightIcon = () => (
   <svg className="stat-svg-icon stat-svg-icon--light" viewBox="0 0 58 58" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="29" cy="29" r="12" stroke="url(#lightGrad)" strokeWidth="2.5" fill="rgba(255,193,7,0.12)"/>
-    <circle className="light-glow-ring" cx="29" cy="29" r="18" stroke="url(#lightGrad)" strokeWidth="1" opacity="0.4"/>
-    {[0,45,90,135,180,225,270,315].map((angle, i) => {
+    <circle cx="29" cy="29" r="12" stroke="url(#lightGrad)" strokeWidth="2.5" fill="rgba(255,193,7,0.12)" />
+    <circle className="light-glow-ring" cx="29" cy="29" r="18" stroke="url(#lightGrad)" strokeWidth="1" opacity="0.4" />
+    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
       const rad = (angle * Math.PI) / 180;
       const x1 = 29 + 22 * Math.cos(rad);
       const y1 = 29 + 22 * Math.sin(rad);
       const x2 = 29 + 27 * Math.cos(rad);
       const y2 = 29 + 27 * Math.sin(rad);
-      return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="url(#lightGrad)" strokeWidth="2" strokeLinecap="round"/>;
+      return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="url(#lightGrad)" strokeWidth="2" strokeLinecap="round" />;
     })}
     <defs>
       <linearGradient id="lightGrad" x1="29" y1="0" x2="29" y2="58" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#FFC107"/><stop offset="1" stopColor="#FF9F43"/>
+        <stop stopColor="#FFC107" /><stop offset="1" stopColor="#FF9F43" />
       </linearGradient>
     </defs>
   </svg>
@@ -119,9 +120,9 @@ function TrendChart({ title, subtitle, data, gradientColors, unit, suggestedMin,
   useEffect(() => {
     // 1. Kiểm tra data hợp lệ
     if (!data || data.length === 0) return;
-    
+
     // 2. CHÚ Ý: Kiểm tra canvas đã được mount vào DOM chưa
-    if (!canvasRef.current) return; 
+    if (!canvasRef.current) return;
 
     if (!chartRef.current) {
       const ctx = canvasRef.current.getContext('2d');
@@ -198,8 +199,8 @@ function TrendChart({ title, subtitle, data, gradientColors, unit, suggestedMin,
               },
               suggestedMin,
               suggestedMax,
-              ticks: { 
-                color: '#8B949E', 
+              ticks: {
+                color: '#8B949E',
                 font: { size: 11, family: 'Inter, sans-serif' },
               },
               grid: { color: 'rgba(48, 54, 61, 0.3)', drawBorder: false },

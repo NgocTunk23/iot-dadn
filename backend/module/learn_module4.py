@@ -1,6 +1,5 @@
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
-# 2 cái lib trên làm j 
 
 # Thứ tự ưu tiên của log level (càng cao càng nghiêm trọng)
 LOG_LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
@@ -11,16 +10,13 @@ class LogManager:
         self.logs_collection = logs_collection
         self.config_collection = config_collection
         self.tz_vn = timezone(timedelta(hours=7))
-#init thì trong hàm có cs 2 tham số là logs_collection và config_collection, đây là 2 collection của MongoDB để lưu log và cấu hình. Ngoài ra còn tạo timezone cho Việt Nam (UTC+7) để đảm bảo timestamp được lưu đúng múi giờ.
-
-
 
     # =============================================
     # HELPER: Lấy log level hiện tại từ DB config
     # =============================================
-    async def _get_current_log_level(self) -> str:  #async là j 
-        config = await self.config_collection.find_one({"type": "logging"}) #await là j
-        return config.get("level", "INFO") if config else "INFO"  #config.get level info là j, nếu không có config thì mặc định là INFO
+    async def _get_current_log_level(self) -> str:
+        config = await self.config_collection.find_one({"type": "logging"})
+        return config.get("level", "INFO") if config else "INFO"
 
     # =============================================
     # UC004.6 - GHI LOG (có check level filter)
@@ -35,7 +31,10 @@ class LogManager:
 
         # So sánh mức độ: bỏ qua nếu event nhỏ hơn ngưỡng config
         if LOG_LEVEL_ORDER.get(level, 1) < LOG_LEVEL_ORDER.get(current_level, 1):
-            return {"status": "skipped", "reason": f"level {level} below threshold {current_level}"}
+            return {
+                "status": "skipped",
+                "reason": f"level {level} below threshold {current_level}",
+            }
 
         log_data = {
             "device_id": str(device_id),
@@ -56,7 +55,10 @@ class LogManager:
         Đặt mức log tối thiểu. Hợp lệ: DEBUG | INFO | WARNING | ERROR.
         """
         if level not in LOG_LEVEL_ORDER:
-            return {"status": "error", "message": f"Invalid level: {level}. Valid: {list(LOG_LEVEL_ORDER.keys())}"}
+            return {
+                "status": "error",
+                "message": f"Invalid level: {level}. Valid: {list(LOG_LEVEL_ORDER.keys())}",
+            }
 
         await self.config_collection.update_one(
             {"type": "logging"},
@@ -77,7 +79,10 @@ class LogManager:
         """
         valid = {"frequency", "average", "trend"}
         if strategy not in valid:
-            return {"status": "error", "message": f"Invalid strategy: {strategy}. Valid: {list(valid)}"}
+            return {
+                "status": "error",
+                "message": f"Invalid strategy: {strategy}. Valid: {list(valid)}",
+            }
 
         await self.config_collection.update_one(
             {"type": "analysis"},
@@ -89,7 +94,9 @@ class LogManager:
     # =============================================
     # UC004.5 - XEM LOG THÔ (có filter)
     # =============================================
-    async def get_logs(self, level: str = None, device_id: str = None, limit: int = 100):
+    async def get_logs(
+        self, level: str = None, device_id: str = None, limit: int = 100
+    ):
         """
         Lấy danh sách log thô.
         - level     : lọc theo mức (INFO / WARNING / ERROR / DEBUG)
@@ -131,9 +138,9 @@ class LogManager:
             from_time = now - timedelta(days=1)
 
         # Query log trong khoảng thời gian
-        cursor = self.logs_collection.find(
-            {"timestamp": {"$gte": from_time}}
-        ).sort("timestamp", 1)
+        cursor = self.logs_collection.find({"timestamp": {"$gte": from_time}}).sort(
+            "timestamp", 1
+        )
 
         logs = []
         async for doc in cursor:
@@ -165,7 +172,11 @@ class LogManager:
 
         return {
             "log_level": logging_cfg.get("level", "INFO") if logging_cfg else "INFO",
-            "strategy": analysis_cfg.get("strategy", "frequency") if analysis_cfg else "frequency",
+            "strategy": (
+                analysis_cfg.get("strategy", "frequency")
+                if analysis_cfg
+                else "frequency"
+            ),
         }
 
 
@@ -258,4 +269,8 @@ def analyze_logs(logs: list, strategy: str, period: str = "day") -> dict:
         return {"strategy": strategy, "data": data}
 
     else:
-        return {"strategy": strategy, "data": {}, "error": f"Unknown strategy: {strategy}"}
+        return {
+            "strategy": strategy,
+            "data": {},
+            "error": f"Unknown strategy: {strategy}",
+        }
