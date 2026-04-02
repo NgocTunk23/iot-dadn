@@ -36,6 +36,12 @@ current_device_status = {
 # Biến lưu thời điểm đèn 1 bật do PIR (đơn vị: mili-giây)
 pir_trigger_time = 0
 
+# ==================== CODE THÊM MỚI (BẮT ĐẦU) ====================
+import music
+danger_cleared_time = 0  # Mốc thời gian khi hết nguy hiểm
+is_music_playing = False # Cờ đánh dấu nhạc đang kêu hay không
+# ==================== CODE THÊM MỚI (KẾT THÚC) ===================
+
 #? --- HÀM GỬI DỮ LIỆU (MỖI 10 GIÂY) ---
 def on_event_timer_callback_send_data():
   aiot_dht20.read_dht20()
@@ -142,7 +148,7 @@ while True:
     
     check_and_log_motion() 
     
-    try:
+    try: # Nhận lệnh từ Server (Mỗi 5 giây một lần)
         response = urequests.get(COMMANDS_URL)
         is_danger_alert = False # Biến lưu trạng thái cảnh báo nguy hiểm
         
@@ -168,6 +174,26 @@ while True:
         print("Lỗi nhận lệnh từ Server:", e)
         try: response.close()
         except: pass
+
+    # Phát nhạc vượt ngưỡng khi nhiệt độ cao (báo cháy)
+    # ==================== CODE THÊM MỚI (BẮT ĐẦU) ====================
+    # Xử lý bật nhạc và đếm 15s để tắt
+    if 'is_danger_alert' in locals():
+        if is_danger_alert == True:
+            # Đang nguy hiểm -> Cập nhật liên tục mốc thời gian và bật nhạc
+            danger_cleared_time = time.ticks_ms()
+            if not is_music_playing:
+                music.play(music.RINGTONE, wait=False)
+                is_music_playing = True
+                print("! PHÁT NHẠC CẢNH BÁO NGƯỠNG !")
+        else:
+            # Hết nguy hiểm -> Kiểm tra xem nhạc có đang kêu không và đã qua 15s chưa
+            if is_music_playing == True:
+                if time.ticks_diff(time.ticks_ms(), danger_cleared_time) > 15000:
+                    music.stop() # Tắt nhạc
+                    is_music_playing = False
+                    print("- ĐÃ QUA 15S AN TOÀN, TẮT NHẠC -")
+    # ==================== CODE THÊM MỚI (KẾT THÚC) ===================
 
 
     # --- CẬP NHẬT LCD (MỖI 5 GIÂY MỘT LẦN) ---

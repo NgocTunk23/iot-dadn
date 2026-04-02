@@ -116,8 +116,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
+<<<<<<< HEAD
 from module.module3 import SceneManager, apply_scene_to_status
 from module.module4 import LogManager
+=======
+from module.module3 import SceneManager, init_module3, router as module3_router, device_status as shared_device_status
+import module.module3 as module3
+from module.module1 import DashboardAnalytics, init_module1, router as module1_router
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
 
 app = FastAPI()
 
@@ -145,7 +151,9 @@ device_log_collection = db.Device_log # Bảng log thiết bị
 scenes_collection = db.Mode        # Bảng kịch bản
 >>>>>>> main
 scene_manager = SceneManager(scenes_collection)
+init_module3(scene_manager)
 
+<<<<<<< HEAD
 # Module 4 - Logging & Analysis
 log_collection = db.logs
 config_collection = db.config
@@ -164,21 +172,21 @@ device_status = [
     [6, 0],
     [7, 0],
 ]
+=======
+# Biến toàn cục từ module được chia sẻ
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
 # Biến phụ để so sánh sự thay đổi log
-last_device_status = {}
+last_device_status = {item[0]: item[1] for item in shared_device_status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
-# Biến UC001.3
-last_sensor_update_time = None
-is_sensor_connected = False
-connection_timeout_seconds = 30
+# Biến toàn cục khác được giữ lại nếu cần
 
 
 # --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
-    global latest_sensor_data, last_device_status, is_danger_global
+    global last_device_status, is_danger_global
     tz_vn = timezone(timedelta(hours=7))
 <<<<<<< HEAD
     now_vn = datetime.now(tz_vn)
@@ -201,6 +209,7 @@ async def handle_data(payload: dict = Body(...)):
 
     try:
         await collection.insert_one(sensor_entry)
+<<<<<<< HEAD
         latest_sensor_data = payload
 
         # UC001.3: Cập nhật connection status
@@ -208,6 +217,15 @@ async def handle_data(payload: dict = Body(...)):
         last_sensor_update_time = now_vn
         if not is_sensor_connected:
             is_sensor_connected = True
+=======
+        
+        import module.module1 as module1_mod
+        module1_mod.update_latest_sensor_data(payload)
+        
+        # UC001.3: Cập nhật connection status (Ủy quyền cho module1)
+        import module.module1 as module1_mod
+        if module1_mod.update_sensor_connection(now_vn):
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
             print("--- Cảm biến đã KẾT NỐI lại ---")
 
         print(
@@ -262,6 +280,17 @@ async def handle_data(payload: dict = Body(...)):
             # Chỉ ghi log nếu trạng thái thay đổi so với lần cuối
             # key của dict last_device_status là dev_num
             if last_device_status.get(dev_num) != stat:
+<<<<<<< HEAD
+=======
+                
+                # Kiểm tra xem đây có phải là chống trộm tự động bật thiết bị 1 không?
+                # (Thiết bị 1 bật nhưng Backend không hề ra lệnh bật trước đó)
+                cmd_dict = {item[0]: item[1] for item in module3.device_status}
+                if dev_num == 1 and stat == True and cmd_dict.get(1) == False:
+                    reason_str = "do hệ thống tự động bật (chống trộm)"
+                else:
+                    reason_str = "do người dùng bật thủ công"
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
 
                 # Format ID: ISODate + number ví dụ 2026-03-09T05:55:25.836Z1
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
@@ -273,12 +302,17 @@ async def handle_data(payload: dict = Body(...)):
                     "houseid": house_id,
                     "numberdevice": dev_num,
                     "status": stat,
+<<<<<<< HEAD
                     "reason": "Yolobit tự động cập nhật hoặc User bấm",
+=======
+                    "reason": reason_str
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
                 }
 
                 await device_log_collection.update_one(
                     {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
                 )
+<<<<<<< HEAD
 
                 last_device_status[dev_num] = stat
                 print(f"--- Đã ghi Log thiết bị ID {dev_num} thay đổi thành {stat} ---")
@@ -289,11 +323,24 @@ async def handle_data(payload: dict = Body(...)):
                     message="Device status changed",
                     value=stat,
                 )
+=======
+                
+                # Đồng bộ lại Backend nếu là chống trộm tự động bật đèn 1
+                if reason_str == "do hệ thống tự động bật (chống trộm)":
+                    for i, item in enumerate(module3.device_status):
+                        if item[0] == 1:
+                            module3.device_status[i][1] = True
+                            break
+
+                last_device_status[dev_num] = stat
+                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
 
     except Exception as e:
         print(f"Lỗi DB: {e}")
     return {"status": "Success"}
 
+<<<<<<< HEAD
 
 @app.get(
     "/api/sensor-data"
@@ -322,6 +369,8 @@ async def get_latest_data():
     return data_to_send
 
 
+=======
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
 # --- ENDPOINT MỚI (ĐỂ ĐIỀU KHIỂN) ---
 
 
@@ -329,9 +378,13 @@ async def get_latest_data():
 @app.get("/api/get-commands")
 async def get_commands():
     # Trả về format mới: dict -> array of objects
+<<<<<<< HEAD
     commands_array = [
         {"numberdevice": item[0], "status": item[1]} for item in device_status
     ]
+=======
+    commands_array = [{"numberdevice": item[0], "status": item[1]} for item in module3.device_status]
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
     return {
         "numberdevices": commands_array,
         "is_danger": is_danger_global,  # Push cờ nguy hiểm xuống Yolobit
@@ -341,10 +394,10 @@ async def get_commands():
 #! Frontend hoặc File khác gọi POST vào đây để thay đổi trạng thái
 @app.post("/api/control")
 async def update_control(payload: dict = Body(...)):
-    global device_status
     # Nhận dữ liệu: {"commands": [[2, True], [6, 85]]}
     new_cmd = payload.get("commands")
     if new_cmd:
+<<<<<<< HEAD
         device_status = new_cmd
         # [MODULE 4] UC004.6 - Ghi log khi user điều khiển thiết bị
         await log_manager.log_event(
@@ -486,8 +539,19 @@ import random, math
 =======
 # --- API PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) MONGODB ---
 from module.module1 import DashboardAnalytics
+=======
+        module3.device_status = new_cmd
+        print(f"--- Lệnh điều khiển mới: {module3.device_status} ---")
+        return {"status": "Updated"}
+    return {"status": "Error"}, 400
 
+# --- INCLUDE ROUTER MODULE 3 ---
+app.include_router(module3_router)
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
+
+# --- PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) ---
 dashboard_analytics = DashboardAnalytics(collection, danger_collection)
+<<<<<<< HEAD
 >>>>>>> 26962896db25a6eae4099ad3399e6aaea624c840
 
 
@@ -691,12 +755,16 @@ async def check_scene_timers():
                 print(f"--- Lệnh điều khiển mới sau Auto-Trigger: {device_status} ---")
         except Exception as e:
             print(f"Lỗi khi check_scene_timers: {e}")
+=======
+init_module1(dashboard_analytics)
+app.include_router(module1_router)
+>>>>>>> 5ad836148976ad5a5d1aa36c5a0b4cda4ac56871
 
 @app.on_event("startup")
 async def startup_event():
     # Khởi chạy các background tasks khi server bắt đầu
-    asyncio.create_task(check_sensor_connection())
-    asyncio.create_task(check_scene_timers())
+    import module.module1 as module1_mod
+    module1_mod.start_monitoring()
 
 
 # ================================================================

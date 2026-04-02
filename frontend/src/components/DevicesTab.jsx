@@ -1,21 +1,5 @@
 import React from 'react';
-import DeviceControls from './DeviceControls';
-
-const IconTimer = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '4px', verticalAlign: 'text-bottom'}}>
-    <circle cx="12" cy="12" r="10" />
-    <polyline points="12 6 12 12 16 14" />
-  </svg>
-);
-
-const IconManual = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '4px', verticalAlign: 'text-bottom'}}>
-    <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
-    <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
-    <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v5" />
-    <path d="M6 13.5V11a2 2 0 0 0-2-2a2 2 0 0 0-2 2v7a6 6 0 0 0 6 6h2a8 8 0 0 0 8-8v-7a2 2 0 0 0-2-2a2 2 0 0 0-2 2v3" />
-  </svg>
-);
+import DeviceControls from './DeviceControls'; // Add this import
 
 export default function DevicesTab({
   deviceStates,
@@ -29,154 +13,187 @@ export default function DevicesTab({
   saveMode,
   deleteMode,
   toggleMode,
-  updateDraftDevice,
+  availableDevices,
+  selectedDevices,
+  onDragStart,
+  onDropToSelected,
+  onDropToAvailable,
+  updateDraftDevice
 }) {
   const isEditing = draftMode && modes.find(m => m.id === draftMode.id);
 
   return (
-    <div className="devices-3col-grid">
-      {/* Khung 1: Điều khiển Thiết bị */}
-      <div className="control-panel">
-        <h3 className="panel-title">Điều khiển Thiết bị</h3>
-        <DeviceControls stateObj={deviceStates} updater={updateDevice} />
-      </div>
-
-      {/* Khung 2: Chế độ hiện có */}
-      <div className="control-panel">
-        <h3 className="panel-title">Chế độ hiện có</h3>
-        <button className="btn-add" onClick={startCreateMode}>+ Tạo mới</button>
-
-        <div className="mode-list">
-          {modes.length === 0 && (
-            <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginTop: '20px' }}>
-              Chưa có chế độ nào
-            </p>
-          )}
-          {modes.map(mode => (
-            <div className="mode-item" key={mode.id}>
-              <div className="mode-item-header">
-                <div>
-                  <div className="mode-item-title">{mode.name}</div>
-                  {mode.triggerType === 'timer' && (
-                    <div className="mode-badge"><IconTimer /> Hẹn giờ: {mode.triggerTime}</div>
-                  )}
-                  {mode.triggerType === 'manual' && (
-                    <div className="mode-badge"><IconManual /> Kích hoạt thủ công</div>
-                  )}
-                </div>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={mode.active}
-                    onChange={(e) => toggleMode(mode.id, e.target.checked)}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-              <div className="mode-actions">
-                <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => startEditMode(mode)}>
-                  Chỉnh sửa
-                </button>
-                <button className="btn btn-danger" onClick={() => deleteMode(mode.id)}>
-                  Hủy bỏ
-                </button>
-              </div>
-            </div>
-          ))}
+    <div className="devices-tab-container">
+      {/* KHUNG CHỐNG TRỘM (LIGHT 1) */}
+      <div className="anti-theft-panel control-panel">
+        <div className="panel-header">
+          <h3 className="panel-title">🛡️ Chế độ Chống trộm</h3>
+          <p className="panel-subtitle">Sử dụng Đèn 1 kết hợp cảm biến</p>
+        </div>
+        <div className="anti-theft-control">
+          <span className="device-label">Bật/Tắt Chống trộm (Đèn 1)</span>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={deviceStates.light1.state}
+              onChange={(e) => updateDevice('light1', 'state', e.target.checked)}
+            />
+            <span className="slider"></span>
+          </label>
         </div>
       </div>
 
-      {/* Khung 3: Chỉnh sửa/Tạo chế độ */}
-      <div className="control-panel">
-        <h3 className="panel-title">
-          {draftMode ? (isEditing ? 'Chỉnh sửa chế độ' : 'Tạo chế độ mới') : 'Chỉnh sửa chế độ'}
-        </h3>
+      <div className="devices-3col-grid">
+        {/* Khung 1: Điều khiển Thiết bị Thủ công */}
+        <div className="control-panel">
+          <h3 className="panel-title">Điều khiển Thủ công</h3>
+          <DeviceControls stateObj={deviceStates} updater={updateDevice} />
+        </div>
 
-        {!draftMode ? (
-          <div style={{ color: 'var(--text-secondary)', textAlign: 'center', marginTop: '50px', padding: '0 20px' }}>
-            <p>Chọn <strong>"Chỉnh sửa"</strong> hoặc <strong>"Tạo mới"</strong> để bắt đầu thiết lập chế độ kịch bản.</p>
-          </div>
-        ) : (
-          <div className="mode-edit-form">
-            <input
-              type="text"
-              className="input-text"
-              placeholder="Tên chế độ (VD: Buổi tối, Ra ngoài...)"
-              value={draftMode.name}
-              onChange={(e) => setDraftMode({ ...draftMode, name: e.target.value })}
-            />
+        {/* Khung 2: Danh sách Chế độ */}
+        <div className="control-panel">
+          <h3 className="panel-title">Chế độ Kịch bản</h3>
+          <button className="btn-add" onClick={startCreateMode}>+ Tạo kịch bản mới</button>
 
-            <div className="trigger-section">
-              <label className="trigger-label">Điều kiện kích hoạt</label>
-              <div className="radio-group">
-                <label className="radio-label">
-                  <input 
-                    type="radio" 
-                    name="triggerType" 
-                    value="manual"
-                    checked={draftMode.triggerType === 'manual'}
-                    onChange={() => setDraftMode({ ...draftMode, triggerType: 'manual'})}
-                  /> 
-                  Thủ công
-                </label>
-                <label className="radio-label">
-                  <input 
-                    type="radio" 
-                    name="triggerType" 
-                    value="timer"
-                    checked={draftMode.triggerType === 'timer'}
-                    onChange={() => setDraftMode({ ...draftMode, triggerType: 'timer'})}  
-                  /> 
-                  Hẹn giờ
-                </label>
+          <div className="mode-list">
+            {modes.length === 0 && (
+              <p className="empty-message">Chưa có kịch bản nào</p>
+            )}
+            {modes.map(mode => (
+              <div className={`mode-item ${mode.active ? 'active' : ''}`} key={mode.id}>
+                <div className="mode-item-header">
+                  <div className="mode-item-info">
+                    <span className="mode-item-title">{mode.name}</span>
+                    <span className="mode-device-count">{mode.action.length} thiết bị</span>
+                  </div>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={mode.active}
+                      onChange={(e) => toggleMode(mode.id, e.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+                <div className="mode-actions">
+                  <button className="btn-icon edit" onClick={() => startEditMode(mode)} title="Chỉnh sửa">
+                    ✏️
+                  </button>
+                  <button className="btn-icon delete" onClick={() => deleteMode(mode.id)} title="Xóa">
+                    🗑️
+                  </button>
+                </div>
               </div>
+            ))}
+          </div>
+        </div>
 
-              {draftMode.triggerType === 'timer' && (
-                <div className="time-input-group">
-                  <label>Chọn thời gian (24 giờ):</label>
-                  <div className="custom-time-picker">
-                    <select 
-                      className="time-select"
-                      value={draftMode.triggerTime ? draftMode.triggerTime.split(':')[0] : '00'}
-                      onChange={(e) => {
-                        const m = draftMode.triggerTime ? draftMode.triggerTime.split(':')[1] : '00';
-                        setDraftMode({ ...draftMode, triggerTime: `${e.target.value}:${m}` });
-                      }}
-                    >
-                      {Array.from({length: 24}).map((_, i) => (
-                        <option key={`h-${i}`} value={i.toString().padStart(2, '0')}>
-                          {i.toString().padStart(2, '0')}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="time-separator">:</span>
-                    <select 
-                      className="time-select"
-                      value={draftMode.triggerTime ? draftMode.triggerTime.split(':')[1] : '00'}
-                      onChange={(e) => {
-                        const h = draftMode.triggerTime ? draftMode.triggerTime.split(':')[0] : '00';
-                        setDraftMode({ ...draftMode, triggerTime: `${h}:${e.target.value}` });
-                      }}
-                    >
-                      {Array.from({length: 60}).map((_, i) => (
-                        <option key={`m-${i}`} value={i.toString().padStart(2, '0')}>
-                          {i.toString().padStart(2, '0')}
-                        </option>
-                      ))}
-                    </select>
+        {/* Khung 3: Cấu hình Kịch bản (Drag & Drop) */}
+        <div className="control-panel">
+          <h3 className="panel-title">
+            {draftMode ? (isEditing ? 'Chỉnh sửa kịch bản' : 'Thiết lập kịch bản mới') : 'Cấu hình kịch bản'}
+          </h3>
+
+          {!draftMode ? (
+            <div className="placeholder-content">
+              <p>Nhấn <strong>"Tạo kịch bản mới"</strong> hoặc <strong>"✏️"</strong> để bắt đầu thiết lập.</p>
+            </div>
+          ) : (
+            <div className="dnd-mode-form">
+              <input
+                type="text"
+                className="input-text"
+                placeholder="Tên kịch bản (VD: Đi ngủ, Tiếp khách...)"
+                value={draftMode.name}
+                onChange={(e) => setDraftMode({ ...draftMode, name: e.target.value })}
+              />
+
+              <div className="dnd-container">
+                {/* Frame: Thiết bị có sẵn */}
+                <div 
+                  className="dnd-frame available-frame"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={onDropToAvailable}
+                >
+                  <label className="dnd-label">Thiết bị có sẵn</label>
+                  <div className="dnd-list">
+                    {availableDevices.map(dev => (
+                      <div 
+                        key={dev.id} 
+                        className="dnd-item"
+                        draggable
+                        onDragStart={(e) => onDragStart(e, dev)}
+                      >
+                        {dev.label} ✥
+                      </div>
+                    ))}
+                    {availableDevices.length === 0 && <p className="dnd-hint">Hết thiết bị</p>}
                   </div>
                 </div>
-              )}
-            </div>
 
-            <DeviceControls stateObj={draftMode.devices} updater={updateDraftDevice} />
+                {/* Frame: Thiết bị trong kịch bản */}
+                <div 
+                  className="dnd-frame selected-frame"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={onDropToSelected}
+                >
+                  <label className="dnd-label">Thiết bị được chọn (Kéo vào đây)</label>
+                  <div className="dnd-list">
+                    {selectedDevices.map(dev => (
+                      <div 
+                        key={dev.id} 
+                        className="dnd-selected-item"
+                        draggable
+                        onDragStart={(e) => onDragStart(e, dev)}
+                      >
+                        <div className="dnd-selected-header">
+                          <span className="dnd-item-label">{dev.label}</span>
+                        </div>
+                        <div className="dnd-item-controls">
+                           {/* Render control tùy theo loại thiết bị */}
+                           {dev.type === 'switch' && (
+                             <label className="toggle-switch small">
+                               <input
+                                 type="checkbox"
+                                 checked={dev.state.state}
+                                 onChange={(e) => updateDraftDevice(dev.id, 'state', e.target.checked)}
+                               />
+                               <span className="slider"></span>
+                             </label>
+                           )}
+                           {dev.type === 'servo' && (
+                             <select 
+                               className="input-select small"
+                               value={dev.state}
+                               onChange={(e) => updateDraftDevice(dev.id, null, e.target.value)}
+                             >
+                               <option value="close">Đóng</option>
+                               <option value="open">Mở</option>
+                             </select>
+                           )}
+                           {dev.type === 'fan' && (
+                             <input 
+                               type="range"
+                               min="0" max="4"
+                               value={dev.state}
+                               onChange={(e) => updateDraftDevice(dev.id, null, parseInt(e.target.value))}
+                             />
+                           )}
+                        </div>
+                      </div>
+                    ))}
+                    {selectedDevices.length === 0 && <p className="dnd-hint">Kéo thiết bị vào đây</p>}
+                  </div>
+                </div>
+              </div>
 
-            <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
-              <button className="btn btn-danger" style={{ flex: 1 }} onClick={cancelEditMode}>Hủy</button>
-              <button className="btn btn-success" style={{ flex: 1 }} onClick={saveMode}>Lưu</button>
+              <div className="form-actions">
+                <button className="btn btn-secondary" onClick={cancelEditMode}>Hủy</button>
+                <button className="btn btn-success" onClick={saveMode}>Lưu kịch bản</button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
