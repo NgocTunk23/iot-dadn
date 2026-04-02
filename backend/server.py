@@ -5,6 +5,16 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
+from module.module2 import (
+    ThresholdManager,
+    NotificationChannelManager,
+    AutomationRuleManager,
+    DangerChecker,
+    AlertDispatcher,
+    init_module2,
+    process_danger_and_rules,
+    router as module2_router,
+)
 from module.module3 import SceneManager, init_module3, router as module3_router, device_status as shared_device_status
 import module.module3 as module3
 from module.module1 import DashboardAnalytics, init_module1, router as module1_router
@@ -29,6 +39,15 @@ device_log_collection = db.Device_log # Bảng log thiết bị
 scenes_collection = db.Mode        # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
 init_module3(scene_manager)
+thresholds_collection    = db.thresholds
+notif_channel_collection = db.notification_channels
+automation_rules_col     = db.Scenario   # Ánh xạ sang bảng Scenario theo ERD
+house_col                = db.House      # THÊM MỚI: đọc emailtowarning, teletowarning
+threshold_mgr    = ThresholdManager(thresholds_collection)
+channel_mgr      = NotificationChannelManager(notif_channel_collection, house_col)
+rule_mgr         = AutomationRuleManager(automation_rules_col)
+alert_dispatcher = AlertDispatcher(danger_collection, notif_channel_collection)
+ 
 
 # Biến toàn cục từ module được chia sẻ
 # Biến phụ để so sánh sự thay đổi log
@@ -36,9 +55,17 @@ last_device_status = {item[0]: item[1] for item in shared_device_status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
-# Biến toàn cục khác được giữ lại nếu cần
+init_module2(app, threshold_mgr, channel_mgr, rule_mgr,
+             alert_dispatcher, danger_collection, notif_channel_collection)
+app.state.device_status      = shared_device_status
+app.state.is_danger_global   = False
+app.state.latest_sensor_data = {}
+ 
+app.include_router(module2_router)
 
 # --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
+
+
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
     global last_device_status, is_danger_global
@@ -62,7 +89,7 @@ async def handle_data(payload: dict = Body(...)):
         
         import module.module1 as module1_mod
         module1_mod.update_latest_sensor_data(payload)
-        
+        app.state.latest_sensor_data = payload
         # UC001.3: Cập nhật connection status (Ủy quyền cho module1)
         import module.module1 as module1_mod
         if module1_mod.update_sensor_connection(now_vn):
@@ -75,22 +102,9 @@ async def handle_data(payload: dict = Body(...)):
         light = payload.get('light', 0)
         humi = payload.get('humi', 0)
         
-        thresh_temp_max = 35
-        thresh_light_max = 90
-        
-        if temp > thresh_temp_max or light > thresh_light_max:
-            is_danger_global = True
-            danger_data = {
-                "_id": common_time,
-                "time": common_time,
-                "houseid": house_id,
-                "type": "Vượt ngưỡng an toàn",
-                "value": {"temp": temp, "humi": humi, "light": light}
-            }
-            await danger_collection.insert_one(danger_data)
-            print("--- !!! ĐÃ GHI LOG NGUY HIỂM !!! ---")
-        else:
-            is_danger_global = False
+        is_danger_val, new_status_val = await process_danger_and_rules(app, payload, house_id)
+        is_danger_global = is_danger_val
+        module3.device_status = new_status_val
 
         # 3. GHI LOG THIẾT BỊ (Bảng Device_log)
         # Yolobit gửi mảng `numberdevices` dạng dictionary: [{"numberdevice": 1, "status": True}, ...]
@@ -136,6 +150,7 @@ async def handle_data(payload: dict = Body(...)):
                     for i, item in enumerate(module3.device_status):
                         if item[0] == 1:
                             module3.device_status[i][1] = True
+                            app.state.device_status = module3.device_status
                             break
 
                 last_device_status[dev_num] = stat
@@ -165,6 +180,7 @@ async def update_control(payload: dict = Body(...)):
     new_cmd = payload.get("commands")
     if new_cmd:
         module3.device_status = new_cmd
+        app.state.device_status = new_cmd
         print(f"--- Lệnh điều khiển mới: {module3.device_status} ---")
         return {"status": "Updated"}
     return {"status": "Error"}, 400
