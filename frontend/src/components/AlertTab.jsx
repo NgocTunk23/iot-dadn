@@ -44,35 +44,10 @@ const GLOBAL_CSS = `
   0%,100% { opacity: 1; filter: drop-shadow(0 0 4px #a78bfa); }
   45%     { opacity: 0.55; filter: drop-shadow(0 0 1px #a78bfa); }
 }
-@keyframes dangerPulse {
-  0%,100% { box-shadow: 0 0 24px rgba(234,67,53,0.18); border-color: rgba(234,67,53,0.5); }
-  50%     { box-shadow: 0 0 40px rgba(234,67,53,0.4);  border-color: rgba(234,67,53,0.9); }
-}
-@keyframes warningShake {
-  0%,100% { transform: translateX(0); }
-  20%     { transform: translateX(-3px); }
-  40%     { transform: translateX(3px); }
-  60%     { transform: translateX(-2px); }
-  80%     { transform: translateX(2px); }
-}
 @keyframes logSlideIn {
   from { opacity: 0; transform: translateX(-8px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-
-/* Hover lift classes */
-.sensor-card-hover {
-  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1),
-              box-shadow 0.3s ease,
-              border-color 0.2s ease !important;
-  cursor: default;
-}
-.sensor-card-hover:hover {
-  transform: translateY(-8px) scale(1.01) !important;
-  box-shadow: 0 20px 48px rgba(0,0,0,0.32) !important;
-  z-index: 2;
-}
-
 .card-hover-lift {
   transition: transform 0.26s cubic-bezier(0.34,1.4,0.64,1),
               box-shadow 0.26s ease !important;
@@ -81,7 +56,6 @@ const GLOBAL_CSS = `
   transform: translateY(-4px) !important;
   box-shadow: 0 12px 30px rgba(0,0,0,0.24) !important;
 }
-
 .tab-btn-hover {
   transition: all 0.22s cubic-bezier(0.4,0,0.2,1) !important;
 }
@@ -90,8 +64,11 @@ const GLOBAL_CSS = `
   background: rgba(255,255,255,0.04) !important;
   color: var(--text-primary) !important;
 }
-
-/* SVG icon animations */
+select option {
+  background-color: #1e293b;
+  color: #f8fafc;
+  padding: 8px;
+}
 .thermo-rect   { animation: thermoPulse 2.2s ease-in-out infinite; transform-origin: bottom center; }
 .humi-drop     { animation: humiFloat 2.4s ease-in-out infinite; }
 .light-rays    { animation: lightSpin 7s linear infinite; transform-origin: 29px 29px; }
@@ -106,7 +83,7 @@ const GLOBAL_CSS = `
 
 function InjectCSS() {
   useEffect(() => {
-    const id = 'alert-tab-v3-css';
+    const id = 'alert-tab-v4-css';
     if (document.getElementById(id)) return;
     const el = document.createElement('style');
     el.id = id; el.textContent = GLOBAL_CSS;
@@ -117,21 +94,19 @@ function InjectCSS() {
 
 /* ─────────────────── SVG ICONS ─────────────────── */
 const TempIconSVG = ({ size = 46 }) => (
-  <svg width={size} height={size} viewBox="0 0 40 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 40 58" fill="none">
     <rect x="12" y="2" width="16" height="38" rx="8" stroke="url(#tG)" strokeWidth="2.5"/>
     <circle cx="20" cy="46" r="10" stroke="url(#tG)" strokeWidth="2.5"/>
     <rect className="thermo-rect" x="17" y="14" width="6" height="28" rx="3" fill="url(#tG)"/>
     <circle cx="20" cy="46" r="6" fill="url(#tG)"/>
-    <defs>
-      <linearGradient id="tG" x1="20" y1="0" x2="20" y2="58" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#FF9F43"/><stop offset="1" stopColor="#FF6B6B"/>
-      </linearGradient>
-    </defs>
+    <defs><linearGradient id="tG" x1="20" y1="0" x2="20" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stopColor="#FF9F43"/><stop offset="1" stopColor="#FF6B6B"/>
+    </linearGradient></defs>
   </svg>
 );
 
 const HumiIconSVG = ({ size = 46 }) => (
-  <svg width={size} height={size} viewBox="0 0 44 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 44 58" fill="none">
     <g className="humi-drop">
       <path d="M22 4C22 4 6 24 6 36C6 44.837 13.163 52 22 52C30.837 52 38 44.837 38 36C38 24 22 4 22 4Z"
         stroke="url(#hG)" strokeWidth="2.5" fill="url(#hF)"/>
@@ -149,75 +124,59 @@ const HumiIconSVG = ({ size = 46 }) => (
 );
 
 const LightIconSVG = ({ size = 46 }) => (
-  <svg width={size} height={size} viewBox="0 0 58 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 58 58" fill="none">
     <circle cx="29" cy="29" r="12" stroke="url(#lG)" strokeWidth="2.5" fill="rgba(255,193,7,0.14)"/>
     <circle className="light-ring" cx="29" cy="29" r="18" stroke="url(#lG)" strokeWidth="1.2" fill="none"/>
     <g className="light-rays">
       {[0,45,90,135,180,225,270,315].map((angle, i) => {
         const rad = angle * Math.PI / 180;
-        return <line key={i}
-          x1={29 + 22*Math.cos(rad)} y1={29 + 22*Math.sin(rad)}
-          x2={29 + 27*Math.cos(rad)} y2={29 + 27*Math.sin(rad)}
-          stroke="url(#lG)" strokeWidth="2.2" strokeLinecap="round"/>;
+        return <line key={i} x1={29+22*Math.cos(rad)} y1={29+22*Math.sin(rad)} x2={29+27*Math.cos(rad)} y2={29+27*Math.sin(rad)} stroke="url(#lG)" strokeWidth="2.2" strokeLinecap="round"/>;
       })}
     </g>
-    <defs>
-      <linearGradient id="lG" x1="29" y1="0" x2="29" y2="58" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#FFC107"/><stop offset="1" stopColor="#FF9F43"/>
-      </linearGradient>
-    </defs>
+    <defs><linearGradient id="lG" x1="29" y1="0" x2="29" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stopColor="#FFC107"/><stop offset="1" stopColor="#FF9F43"/>
+    </linearGradient></defs>
   </svg>
 );
 
 const RadarIconSVG = ({ size = 18, color = '#00D1FF' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="12" r="9.5"  stroke={color} strokeWidth="1.4" opacity="0.25"/>
-    <circle cx="12" cy="12" r="5.5"  stroke={color} strokeWidth="1.4" opacity="0.5"/>
-    <circle cx="12" cy="12" r="1.8"  fill={color}/>
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="9.5" stroke={color} strokeWidth="1.4" opacity="0.25"/>
+    <circle cx="12" cy="12" r="5.5" stroke={color} strokeWidth="1.4" opacity="0.5"/>
+    <circle cx="12" cy="12" r="1.8" fill={color}/>
     <line className="radar-arm" x1="12" y1="12" x2="20" y2="4" stroke={color} strokeWidth="1.6" strokeLinecap="round" opacity="0.8"/>
     <circle className="radar-ping" cx="12" cy="12" r="9" stroke={color} strokeWidth="1.2" fill="none"/>
   </svg>
 );
 
 const BellIconSVG = ({ size = 18, color = '#10b981' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <g className="bell-group">
-      <path d="M6 10C6 6.686 8.686 4 12 4s6 2.686 6 6v4.5l2 2.5H4l2-2.5V10z"
-        stroke={color} strokeWidth="1.7" fill={`${color}1a`}/>
+      <path d="M6 10C6 6.686 8.686 4 12 4s6 2.686 6 6v4.5l2 2.5H4l2-2.5V10z" stroke={color} strokeWidth="1.7" fill={`${color}1a`}/>
     </g>
     <path d="M10 19a2 2 0 004 0" stroke={color} strokeWidth="1.7" strokeLinecap="round"/>
   </svg>
 );
 
 const GearIconSVG = ({ size = 18, color = '#FF9F43' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <g className="gear-g">
       <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke={color} strokeWidth="1.7"/>
-      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
-        stroke={color} strokeWidth="1.7" fill={`${color}11`}/>
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke={color} strokeWidth="1.7" fill={`${color}11`}/>
     </g>
   </svg>
 );
 
 const BoltIconSVG = ({ size = 18, color = '#a78bfa' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <g className="bolt-g">
-      <path d="M13 2L4.5 13.5H11L10 22L19.5 10.5H13L13 2Z"
-        stroke={color} strokeWidth="1.7" strokeLinejoin="round" fill={`${color}22`}/>
+      <path d="M13 2L4.5 13.5H11L10 22L19.5 10.5H13L13 2Z" stroke={color} strokeWidth="1.7" strokeLinejoin="round" fill={`${color}22`}/>
     </g>
   </svg>
 );
 
-const WarningIconSVG = ({ size = 20 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 2.5L2 20.5h20L12 2.5z" stroke="#EA4335" strokeWidth="1.8" fill="rgba(234,67,53,0.12)" strokeLinejoin="round"/>
-    <line x1="12" y1="9" x2="12" y2="14.5" stroke="#EA4335" strokeWidth="2" strokeLinecap="round"/>
-    <circle cx="12" cy="17.5" r="1.1" fill="#EA4335"/>
-  </svg>
-);
-
 const TelegramIconSVG = ({ size = 20 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <circle cx="12" cy="12" r="10" fill="rgba(42,171,238,0.1)" stroke="#2AABEE" strokeWidth="1.5"/>
     <path d="M6 12.5L17.5 7.5L14 17.5L11 14.5L6 12.5Z" stroke="#2AABEE" strokeWidth="1.5" strokeLinejoin="round" fill="rgba(42,171,238,0.1)"/>
     <line x1="11" y1="14.5" x2="14" y2="11" stroke="#2AABEE" strokeWidth="1.5" strokeLinecap="round"/>
@@ -225,22 +184,13 @@ const TelegramIconSVG = ({ size = 20 }) => (
 );
 
 const EmailIconSVG = ({ size = 20 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <rect x="2" y="5" width="20" height="14" rx="3" stroke="#EA4335" strokeWidth="1.7" fill="rgba(234,67,53,0.08)"/>
     <path d="M2 8.5l10 6.5 10-6.5" stroke="#EA4335" strokeWidth="1.7" strokeLinecap="round"/>
   </svg>
 );
 
 /* ─────────────────── HELPERS ─────────────────── */
-function formatVNTime(timeStr) {
-  if (!timeStr) return '--';
-  try {
-    const match = timeStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-    if (match) { const [_, y, mo, d, h, mi, s] = match; return `${h}:${mi}:${s}  ${d}/${mo}/${y}`; }
-    return timeStr;
-  } catch { return timeStr; }
-}
-
 function fmtDeviceVal(v) {
   if (v === true  || v === 1)  return 'BẬT';
   if (v === false || v === 0)  return 'TẮT';
@@ -250,7 +200,6 @@ function fmtDeviceVal(v) {
 
 /* ─────────────────── TAB META ─────────────────── */
 const TAB_META = {
-  monitor:   { Icon: RadarIconSVG, color: '#00D1FF' },
   threshold: { Icon: GearIconSVG,  color: '#FF9F43' },
   channel:   { Icon: BellIconSVG,  color: '#10b981' },
   rules:     { Icon: BoltIconSVG,  color: '#a78bfa' },
@@ -294,10 +243,7 @@ function TabBar({ tabs, active, onChange }) {
             {meta.Icon && <meta.Icon size={17} color={isActive ? meta.color : '#8B949E'} />}
             {t.label}
             {isActive && (
-              <span style={{
-                width: '6px', height: '6px', borderRadius: '50%',
-                background: meta.color, boxShadow: `0 0 6px ${meta.color}`, flexShrink: 0,
-              }} />
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: meta.color, boxShadow: `0 0 6px ${meta.color}`, flexShrink: 0 }} />
             )}
           </button>
         );
@@ -356,12 +302,7 @@ function StatusBadge({ ok, label }) {
       letterSpacing: '0.03em',
       boxShadow: ok ? '0 0 8px rgba(16,185,129,0.15)' : '0 0 8px rgba(234,67,53,0.15)',
     }}>
-      <span style={{
-        width: '6px', height: '6px', borderRadius: '50%',
-        background: ok ? '#10b981' : 'var(--accent-red)',
-        boxShadow: ok ? '0 0 4px #10b981' : '0 0 4px var(--accent-red)',
-        flexShrink: 0,
-      }} />
+      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: ok ? '#10b981' : 'var(--accent-red)', boxShadow: ok ? '0 0 4px #10b981' : '0 0 4px var(--accent-red)', flexShrink: 0 }} />
       {label}
     </span>
   );
@@ -390,188 +331,7 @@ const selectStyle = { ...inputStyle, cursor: 'pointer' };
 
 const SENSOR_ICON_MAP = { temp: TempIconSVG, humi: HumiIconSVG, light: LightIconSVG };
 
-/* ─────────────────── 1. GIÁM SÁT NGƯỠNG ─────────────────── */
-function MonitorTab({ addToast }) {
-  const [sensor, setSensor]         = useState(null);
-  const [thresholds, setThresholds] = useState(null);
-  const [logs, setLogs]             = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [showLogs, setShowLogs]     = useState(true);
-
-  const SENSOR_META = {
-    temp:  { label: 'Nhiệt độ', unit: '°C', color: '#FF9F43', bg: 'rgba(255,159,67,0.08)',  border: 'rgba(255,159,67,0.3)'  },
-    humi:  { label: 'Độ ẩm',    unit: '%',  color: '#00D1FF', bg: 'rgba(0,209,255,0.08)',   border: 'rgba(0,209,255,0.3)'   },
-    light: { label: 'Ánh sáng', unit: '%',  color: '#FFC107', bg: 'rgba(255,193,7,0.08)',   border: 'rgba(255,193,7,0.3)'   },
-  };
-
-  const fetchAll = useCallback(async () => {
-    try {
-      const [thRes, logRes, sensorRes] = await Promise.all([
-        axios.get(`${API}/thresholds?houseid=HS001`),
-        axios.get(`${API}/danger-logs?houseid=HS001&limit=8`),
-        axios.get(`${API}/sensor-data`),
-      ]);
-      setThresholds(thRes.data); setLogs(logRes.data || []); setSensor(sensorRes.data);
-    } catch { }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { fetchAll(); const t = setInterval(fetchAll, 10000); return () => clearInterval(t); }, [fetchAll]);
-
-  if (loading) return <p style={{ color: 'var(--text-secondary)' }}>Đang tải...</p>;
-
-  return (
-    <>
-      {sensor?.is_danger && (
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(234,67,53,0.15) 0%, rgba(234,67,53,0.06) 100%)',
-          border: '1px solid rgba(234,67,53,0.5)',
-          borderRadius: '14px', padding: '14px 20px', marginBottom: '20px',
-          display: 'flex', alignItems: 'center', gap: '12px',
-          color: 'var(--accent-red)', fontWeight: 700,
-          animation: 'dangerPulse 1.6s ease-in-out infinite',
-          letterSpacing: '0.02em',
-        }}>
-          <div style={{ animation: 'warningShake 2s ease-in-out infinite', display: 'flex' }}>
-            <WarningIconSVG size={26} />
-          </div>
-          HỆ THỐNG ĐANG CÓ CẢNH BÁO NGUY HIỂM! Kiểm tra dữ liệu bên dưới.
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: '16px', marginBottom: '24px' }}>
-        {Object.entries(SENSOR_META).map(([key, meta]) => {
-          const val    = sensor?.[key] ?? '--';
-          const th     = thresholds?.[key];
-          const numVal = parseFloat(val);
-          const over   = th && !isNaN(numVal) && (numVal > th.max || numVal < th.min);
-          const IconComp = SENSOR_ICON_MAP[key];
-          return (
-            <div key={key} className="sensor-card-hover" style={{
-              background: over ? 'rgba(234,67,53,0.06)' : meta.bg,
-              borderRadius: '18px', padding: '22px',
-              border: `1.5px solid ${over ? 'var(--accent-red)' : meta.border}`,
-              boxShadow: over ? '0 0 20px rgba(234,67,53,0.2)' : `0 2px 14px ${meta.bg}`,
-              position: 'relative', overflow: 'hidden',
-            }}>
-              <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
-                background: over ? 'var(--accent-red)' : meta.color,
-                borderRadius: '18px 18px 0 0',
-              }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                <div>
-                  <div style={{ marginBottom: '8px' }}>
-                    <IconComp size={48} />
-                  </div>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase' }}>
-                    {meta.label}
-                  </div>
-                </div>
-                <StatusBadge ok={!over} label={over ? 'Vượt ngưỡng' : 'An toàn'} />
-              </div>
-              <div style={{ fontSize: '2.4rem', fontWeight: 800, color: over ? 'var(--accent-red)' : meta.color, letterSpacing: '-0.5px', lineHeight: 1.1 }}>
-                {val}<span style={{ fontSize: '1rem', fontWeight: 500, opacity: 0.75, marginLeft: '2px' }}>{meta.unit}</span>
-              </div>
-              {th && (
-                <div style={{ marginTop: '10px', fontSize: '0.74rem', color: 'var(--text-secondary)', background: 'var(--bg-card-inner)', borderRadius: '6px', padding: '5px 9px', display: 'inline-block' }}>
-                  Min {th.min}{meta.unit} · Max {th.max}{meta.unit}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <Card>
-        <SectionTitle color="#a78bfa">
-          <WarningIconSVG size={17} /> Lịch sử cảnh báo gần đây
-        </SectionTitle>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '16px', marginTop: '-10px', gap: '10px' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}>{showLogs ? 'Hiển thị' : 'Ẩn'}</span>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={showLogs} onChange={e => setShowLogs(e.target.checked)} />
-            <span className="slider"></span>
-          </label>
-        </div>
-
-        {showLogs ? (
-          logs.length === 0
-            ? <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px' }}>Chưa có cảnh báo nào.</p>
-            : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {logs.map((log, i) => (
-                  <div key={i} className="log-item" style={{
-                    background: 'linear-gradient(135deg, rgba(234,67,53,0.05) 0%, var(--bg-card-inner) 60%)',
-                    borderRadius: '0 12px 12px 0',
-                    padding: '14px 16px',
-                    borderLeft: '3px solid var(--accent-red)',
-                    boxShadow: '0 1px 8px rgba(234,67,53,0.08)',
-                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                    animationDelay: `${i * 0.06}s`,
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateX(5px)'; e.currentTarget.style.boxShadow = '0 4px 18px rgba(234,67,53,0.16)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 1px 8px rgba(234,67,53,0.08)'; }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                      <span style={{ fontWeight: 600, color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <WarningIconSVG size={15} /> {log.type}
-                      </span>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatVNTime(log.time)}</span>
-                    </div>
-                    {log.violations?.length > 0 && (
-                      <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        {log.violations.map((v, j) => (
-                          <span key={j} style={{ marginRight: '10px' }}>
-                            {SENSOR_META[v.sensor]?.label}: {v.value}{SENSOR_META[v.sensor]?.unit} ({v.threshold === 'max' ? '↑ vượt MAX' : '↓ dưới MIN'} {v.limit})
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {log.triggered_rules?.length > 0 && (
-                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed var(--border-color)', fontSize: '0.82rem' }}>
-                        {log.triggered_rules.map((rule, ri) => {
-                          const changedItems = rule.changes?.filter(c => c.changed) || [];
-                          return (
-                            <div key={ri} style={{ marginTop: ri > 0 ? '6px' : '0' }}>
-                              <span style={{ color: '#10b981', fontWeight: 600 }}>
-                                <BoltIconSVG size={13} color="#10b981" /> {rule.rule_name}:
-                              </span>
-                              {changedItems.length === 0
-                                ? <span style={{ color: 'var(--text-secondary)', marginLeft: '8px', fontStyle: 'italic' }}>ℹ️ Không có thay đổi</span>
-                                : changedItems.map((c, ci) => (
-                                  <span key={ci} style={{ color: 'var(--text-secondary)', marginLeft: '8px' }}>
-                                    {c.device_name}: <span style={{ color: 'var(--accent-red)' }}>{fmtDeviceVal(c.from)}</span>
-                                    {' ➜ '}<span style={{ color: '#10b981' }}>{fmtDeviceVal(c.to)}</span>
-                                  </span>
-                                ))
-                              }
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {(!log.triggered_rules || log.triggered_rules.length === 0) && log.type !== 'Mất kết nối cảm biến (Quá 30 giây)' && (
-                      <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                        ✅ Không có kịch bản tự động nào được kích hoạt
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )
-        ) : (
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
-            Lịch sử cảnh báo đang bị tắt. Giật công tắc để hiển thị lại.
-          </p>
-        )}
-      </Card>
-    </>
-  );
-}
-
-/* ─────────────────── 2. CẤU HÌNH NGƯỠNG ─────────────────── */
+/* ─────────────────── 1. CẤU HÌNH NGƯỠNG ─────────────────── */
 function DualThresholdSlider({ sensor, draft, setDraft, setActiveThumb, activeThumb, getNum, clamp }) {
   const minValRaw = getNum(draft[sensor.key]?.min, sensor.min);
   const maxValRaw = getNum(draft[sensor.key]?.max, sensor.max);
@@ -579,10 +339,9 @@ function DualThresholdSlider({ sensor, draft, setDraft, setActiveThumb, activeTh
   const mMax = clamp(maxValRaw, sensor.min, sensor.max);
   const activeMin = Math.min(mMin, mMax);
   const activeMax = Math.max(mMin, mMax);
-  const denom    = (sensor.max - sensor.min) || 1;
-  const leftPct  = ((activeMin - sensor.min) / denom) * 100;
+  const denom   = (sensor.max - sensor.min) || 1;
+  const leftPct = ((activeMin - sensor.min) / denom) * 100;
   const widthPct = ((activeMax - activeMin) / denom) * 100;
-
   return (
     <div style={{ marginBottom: '25px', position: 'relative' }}>
       <div className="dual-threshold-slider">
@@ -673,9 +432,7 @@ function ThresholdTab({ addToast }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '20px' }}>
               {['min', 'max'].map(bound => (
                 <div key={bound} style={{
-                  background: bound === 'min'
-                    ? 'linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)'
-                    : 'linear-gradient(135deg, rgba(234,67,53,0.06) 0%, var(--bg-card-inner) 100%)',
+                  background: bound === 'min' ? 'linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)' : 'linear-gradient(135deg, rgba(234,67,53,0.06) 0%, var(--bg-card-inner) 100%)',
                   borderRadius: '10px', padding: '12px',
                   border: `1px solid ${bound === 'min' ? 'rgba(0,209,255,0.18)' : 'rgba(234,67,53,0.18)'}`,
                 }}>
@@ -698,7 +455,7 @@ function ThresholdTab({ addToast }) {
               activeThumb={activeThumb} setActiveThumb={setActiveThumb} getNum={getNum} clamp={clamp} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
               <button className="btn btn-primary" disabled={saving} onClick={() => handleSave(s.key)}>
-                {saving ? 'Đang lưu...' : '💾 Lưu ngưỡng'}
+                {saving ? 'Đang lưu...' : 'Lưu'}
               </button>
             </div>
           </Card>
@@ -708,7 +465,7 @@ function ThresholdTab({ addToast }) {
   );
 }
 
-/* ─────────────────── 3. KÊNH THÔNG BÁO ─────────────────── */
+/* ─────────────────── 2. KÊNH THÔNG BÁO ─────────────────── */
 function ChannelTab({ addToast }) {
   const [channels, setChannels] = useState({ telegram: { enabled: false }, email: { enabled: false } });
   const [draft, setDraft]       = useState(null);
@@ -741,13 +498,8 @@ function ChannelTab({ addToast }) {
 
   return (
     <>
-      {/* Telegram */}
       <Card>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          marginBottom: '20px', paddingBottom: '14px', paddingLeft: '14px',
-          borderBottom: '1px solid var(--border-color)', position: 'relative',
-        }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', paddingLeft: '14px', borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
           <span style={{ position: 'absolute', left: 0, top: '2px', bottom: '14px', width: '3px', borderRadius: '4px', background: 'linear-gradient(180deg, #2AABEE, #2AABEE44)', boxShadow: '0 0 8px #2AABEE66' }} />
           <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             <TelegramIconSVG size={22} />
@@ -774,13 +526,8 @@ function ChannelTab({ addToast }) {
         </div>
       </Card>
 
-      {/* Email */}
       <Card>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          marginBottom: '20px', paddingBottom: '14px', paddingLeft: '14px',
-          borderBottom: '1px solid var(--border-color)', position: 'relative',
-        }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', paddingLeft: '14px', borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
           <span style={{ position: 'absolute', left: 0, top: '2px', bottom: '14px', width: '3px', borderRadius: '4px', background: 'linear-gradient(180deg, #EA4335, #EA433544)', boxShadow: '0 0 8px #EA433566' }} />
           <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             <EmailIconSVG size={22} />
@@ -806,7 +553,7 @@ function ChannelTab({ addToast }) {
   );
 }
 
-/* ─────────────────── 4. KỊCH BẢN TỰ ĐỘNG ─────────────────── */
+/* ─────────────────── 3. KỊCH BẢN TỰ ĐỘNG ─────────────────── */
 const SENSOR_OPTS  = ['temp', 'humi', 'light'];
 const OP_OPTS      = [
   { value: 'gt',  label: '> lớn hơn' },
@@ -822,8 +569,8 @@ const DEVICE_OPTS  = [
   { id: 5, label: '💡 Đèn 5' }, { id: 6, label: '🚪 Servo' },
   { id: 7, label: '🌀 Quạt (0-100%)' },
 ];
-const FAN_LEVELS = [70, 80, 90, 100];
-const EMPTY_RULE = { name: '', enabled: true, condition: { sensor: 'temp', op: 'gt', value: 35 }, actions: [{ numberdevice: 7, status: 100 }] };
+const FAN_LEVELS   = [70, 80, 90, 100];
+const EMPTY_RULE   = { name: '', enabled: true, condition: { sensor: 'temp', op: 'gt', value: 35 }, actions: [{ numberdevice: 7, status: 100 }] };
 
 function AutoRuleTab({ addToast }) {
   const [rules, setRules]       = useState([]);
@@ -840,8 +587,14 @@ function AutoRuleTab({ addToast }) {
 
   const openCreate = () => { setDraft(JSON.parse(JSON.stringify(EMPTY_RULE))); setEditName(null); setShowForm(true); };
   const openEdit = (rule) => {
-    setDraft({ name: rule.name, enabled: rule.enabled, condition: { ...rule.condition }, actions: rule.actions.map(a => ({ numberdevice: parseInt(a.numberdevice), status: a.status })) });
-    setEditName(rule.name); setShowForm(true);
+    setDraft({
+      name: rule.name,
+      enabled: rule.enabled,
+      condition: { sensor: rule.condition?.sensor || 'temp', op: rule.condition?.op || 'gt', value: rule.condition?.value || 0 },
+      actions: (rule.actions || rule.action || []).map(a => ({ numberdevice: parseInt(a.numberdevice), status: a.status }))
+    });
+    setEditName(rule.name);
+    setShowForm(true);
   };
 
   const serializeStatus = (devId, status) => {
@@ -852,11 +605,13 @@ function AutoRuleTab({ addToast }) {
 
   const handleSave = async () => {
     if (!draft.name.trim()) { addToast('Tên kịch bản không được rỗng!', 'error'); return; }
+    const condValue = parseFloat(draft.condition.value);
+    if (isNaN(condValue)) { addToast('Giá trị điều kiện phải là số!', 'error'); return; }
     setSaving(true);
     try {
       await axios.post(`${API}/automation-rules`, {
         houseid: 'HS001', name: draft.name.trim(),
-        condition: { ...draft.condition, value: parseFloat(draft.condition.value) },
+        condition: { ...draft.condition, value: condValue },
         actions: draft.actions.map(a => ({ numberdevice: parseInt(a.numberdevice), status: serializeStatus(a.numberdevice, a.status) })),
         enabled: draft.enabled,
       });
@@ -868,7 +623,7 @@ function AutoRuleTab({ addToast }) {
 
   const handleDelete = async (name) => {
     if (!window.confirm(`Xóa kịch bản "${name}"?`)) return;
-    try { await axios.delete(`${API}/automation-rules`, { params: { houseid: 'HS001', name } }); addToast(`Đã xóa kịch bản "${name}".`, 'info'); fetchRules(); }
+    try { await axios.delete(`${API}/automation-rules`, { params: { houseid: 'HS001', name } }); addToast(`Đã xóa "${name}".`, 'info'); fetchRules(); }
     catch { addToast('Lỗi xóa kịch bản!', 'error'); }
   };
 
@@ -877,8 +632,21 @@ function AutoRuleTab({ addToast }) {
     catch { addToast('Lỗi thay đổi trạng thái!', 'error'); }
   };
 
+  // Tập hợp ID thiết bị đã được dùng trong các hàng khác (để disable)
+  const usedDeviceIds = (rowIndex) =>
+    new Set(draft.actions
+      .filter((_, j) => j !== rowIndex)
+      .map(a => parseInt(a.numberdevice))
+    );
+
   const setAction    = (i, field, val) => setDraft(prev => { const acts = [...prev.actions]; acts[i] = { ...acts[i], [field]: val }; return { ...prev, actions: acts }; });
-  const addAction    = () => setDraft(prev => ({ ...prev, actions: [...prev.actions, { numberdevice: 1, status: true }] }));
+  const addAction    = () => {
+    const used = new Set(draft.actions.map(a => parseInt(a.numberdevice)));
+    const next = DEVICE_OPTS.find(d => !used.has(d.id));
+    if (!next) { addToast('Tất cả thiết bị đã được thêm vào kịch bản!', 'info'); return; }
+    const defaultStatus = next.id >= 1 && next.id <= 5 ? true : 0;
+    setDraft(prev => ({ ...prev, actions: [...prev.actions, { numberdevice: next.id, status: defaultStatus }] }));
+  };
   const removeAction = (i) => setDraft(prev => ({ ...prev, actions: prev.actions.filter((_, j) => j !== i) }));
 
   return (
@@ -920,7 +688,8 @@ function AutoRuleTab({ addToast }) {
               <select style={selectStyle} value={draft.condition.op} onChange={e => setDraft(p => ({ ...p, condition: { ...p.condition, op: e.target.value } }))}>
                 {OP_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              <input type="number" style={{ ...inputStyle, width: '90px' }} value={draft.condition.value} onChange={e => setDraft(p => ({ ...p, condition: { ...p.condition, value: e.target.value } }))} />
+              <input type="number" style={{ ...inputStyle, width: '90px' }} value={draft.condition.value}
+                onChange={e => setDraft(p => ({ ...p, condition: { ...p.condition, value: e.target.value } }))} />
             </div>
           </div>
 
@@ -932,18 +701,30 @@ function AutoRuleTab({ addToast }) {
               </span>
               <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={addAction}>+ Thêm</button>
             </div>
+
             {draft.actions.map((act, i) => {
-              const devId = parseInt(act.numberdevice);
+              const devId   = parseInt(act.numberdevice);
               const isLight = devId >= 1 && devId <= 5;
               const isServo = devId === 6;
               const isFan   = devId === 7;
+              const used = usedDeviceIds(i);
+
               return (
-                <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', padding: '8px 10px' }}>
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>→ Thiết bị</span>
                   <select style={selectStyle} value={act.numberdevice}
-                    onChange={e => { const newId = parseInt(e.target.value); setAction(i, 'numberdevice', e.target.value); setAction(i, 'status', newId >= 1 && newId <= 5 ? true : 0); }}>
-                    {DEVICE_OPTS.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+                    onChange={e => {
+                      const newId = parseInt(e.target.value);
+                      setAction(i, 'numberdevice', e.target.value);
+                      setAction(i, 'status', newId >= 1 && newId <= 5 ? true : 0);
+                    }}>
+                    {DEVICE_OPTS.map(d => (
+                      <option key={d.id} value={d.id} disabled={used.has(d.id)}>
+                        {used.has(d.id) ? `${d.label} (đã dùng)` : d.label}
+                      </option>
+                    ))}
                   </select>
+
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Trạng thái</span>
                   {isLight && <select style={{ ...selectStyle, width: '130px' }} value={String(act.status)} onChange={e => setAction(i, 'status', e.target.value === 'true')}><option value="true">✅ Bật</option><option value="false">⭕ Tắt</option></select>}
                   {isServo && <select style={{ ...selectStyle, width: '130px' }} value={String(act.status)} onChange={e => setAction(i, 'status', parseFloat(e.target.value))}><option value="90">🔓 Mở (90°)</option><option value="0">🔒 Đóng (0°)</option></select>}
@@ -953,7 +734,7 @@ function AutoRuleTab({ addToast }) {
               );
             })}
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-              💡 Đèn: Bật/Tắt &nbsp;|&nbsp; Servo: Mở/Đóng &nbsp;|&nbsp; Quạt: 0–100%
+              💡 Mỗi thiết bị chỉ được chọn một lần để tránh xung đột
             </p>
           </div>
 
@@ -967,7 +748,7 @@ function AutoRuleTab({ addToast }) {
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
             <button className="btn btn-danger" onClick={() => setShowForm(false)}>Hủy</button>
-            <button className="btn btn-success" disabled={saving} onClick={handleSave}>{saving ? 'Đang lưu...' : '💾 Lưu kịch bản'}</button>
+            <button className="btn btn-success" disabled={saving} onClick={handleSave}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         </Card>
       )}
@@ -985,6 +766,7 @@ function AutoRuleTab({ addToast }) {
         const opLabel = OP_OPTS.find(o => o.value === cond?.op)?.label || cond?.op;
         const sColor  = { temp: '#FF9F43', humi: '#00D1FF', light: '#FFC107' }[cond?.sensor] || 'var(--accent-blue)';
         const SIcon   = SENSOR_ICON_MAP[cond?.sensor];
+        const actionList = rule.actions || rule.action || [];
         return (
           <Card key={rule._id} style={{
             borderLeft: `3px solid ${rule.enabled ? sColor : 'var(--border-color)'}`,
@@ -1005,8 +787,8 @@ function AutoRuleTab({ addToast }) {
                 </div>
                 <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <BoltIconSVG size={14} color="#10b981" />
-                  {rule.actions?.map(a => {
-                    const devLabel = DEVICE_OPTS.find(d => d.id === a.numberdevice)?.label || `Thiết bị ${a.numberdevice}`;
+                  {actionList.map(a => {
+                    const devLabel = DEVICE_OPTS.find(d => d.id === parseInt(a.numberdevice))?.label || `Thiết bị ${a.numberdevice}`;
                     return `${devLabel} → ${fmtDeviceVal(a.status)}`;
                   }).join('  ·  ')}
                 </div>
@@ -1017,7 +799,7 @@ function AutoRuleTab({ addToast }) {
                   <span className="slider"></span>
                 </label>
                 <button className="btn btn-primary" style={{ padding: '6px 14px', borderRadius: '9px' }} onClick={() => openEdit(rule)}>Sửa</button>
-                <button className="btn btn-danger"  style={{ padding: '6px 12px', borderRadius: '9px' }} onClick={() => handleDelete(rule.name)}>🗑</button>
+                <button className="btn btn-danger" style={{ padding: '6px 12px', borderRadius: '9px' }} onClick={() => handleDelete(rule.name)}>🗑</button>
               </div>
             </div>
           </Card>
@@ -1029,19 +811,42 @@ function AutoRuleTab({ addToast }) {
 
 /* ─────────────────── MAIN ─────────────────── */
 const TABS = [
-  { key: 'monitor',   label: 'Giám sát ngưỡng' },
   { key: 'threshold', label: 'Cấu hình ngưỡng' },
   { key: 'channel',   label: 'Kênh thông báo'  },
   { key: 'rules',     label: 'Kịch bản tự động' },
 ];
 
-export default function AlertTab({ addToast }) {
-  const [sub, setSub] = useState('monitor');
+/**
+ * @param {function} addToast
+ * @param {function} onDeviceUpdate - callback(numberdevice: Array) để App cập nhật deviceStates
+ *   Được gọi khi phát hiện kịch bản backend vừa thay đổi trạng thái thiết bị.
+ */
+export default function AlertTab({ addToast, onDeviceUpdate }) {
+  const [sub, setSub] = useState('threshold');
+  useEffect(() => {
+    if (!onDeviceUpdate) return;
+    let prevState = null;
+    const checkBackend = async () => {
+      try {
+        const res = await axios.get('http://localhost:5000/api/sensor-data');
+        if (res.data && res.data.numberdevice) {
+          const currState = JSON.stringify(res.data.numberdevice);
+          if (prevState && prevState !== currState) {
+            // Kịch bản vừa chạy → notify App cập nhật deviceStates
+            onDeviceUpdate(res.data.numberdevice);
+          }
+          prevState = currState;
+        }
+      } catch {}
+    };
+    const timer = setInterval(checkBackend, 2000);
+    return () => clearInterval(timer);
+  }, [onDeviceUpdate]);
+
   return (
     <div>
       <InjectCSS />
       <TabBar tabs={TABS} active={sub} onChange={setSub} />
-      {sub === 'monitor'   && <MonitorTab   addToast={addToast} />}
       {sub === 'threshold' && <ThresholdTab addToast={addToast} />}
       {sub === 'channel'   && <ChannelTab   addToast={addToast} />}
       {sub === 'rules'     && <AutoRuleTab  addToast={addToast} />}

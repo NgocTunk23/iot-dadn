@@ -52,8 +52,8 @@ const NAV_ITEMS = [
 
   { key: 'dashboard', icon: <IconDashboard />, label: 'Tổng quan' },
   { key: 'devices',   icon: <IconDevices />,   label: 'Thiết bị' },
-  { key: 'settings',  icon: <IconSettings />,  label: 'Cài đặt' },
   { key: 'alerts', icon: <IconAlerts />, label: 'Cảnh báo' },
+  { key: 'settings',  icon: <IconSettings />,  label: 'Cài đặt' }
 ];
 
 export default function Sidebar({ activeTab, onTabChange }) {

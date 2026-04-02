@@ -1,7 +1,131 @@
-import random
+import asyncio
+from fastapi import APIRouter, Query
 import math
+import random
 from datetime import datetime, timedelta, timezone
 import time as _time
+
+# --- ROUTER MODULE 1 ---
+router = APIRouter(prefix="/api")
+_dashboard_analytics = None
+
+# --- BIẾN GIÁM SÁT KẾT NỐI (UC001.3) ---
+last_sensor_update_time = None
+is_sensor_connected = False
+connection_timeout_seconds = 30
+latest_sensor_data = {}
+
+def init_module1(analytics):
+    global _dashboard_analytics
+    _dashboard_analytics = analytics
+
+def update_latest_sensor_data(payload):
+    """Cập nhật dữ liệu cảm biến mới nhất (gọi từ server.py)"""
+    global latest_sensor_data
+    latest_sensor_data = payload
+
+def update_sensor_connection(now_vn):
+    """Cập nhật thời điểm nhận dữ liệu mới nhất (gọi từ server.py)"""
+    global last_sensor_update_time, is_sensor_connected
+    last_sensor_update_time = now_vn
+    if not is_sensor_connected:
+        is_sensor_connected = True
+        return True # Trạng thái vừa thay đổi từ False sang True
+    return False
+
+async def check_sensor_connection():
+    """
+    UC001.3 - Cảnh báo mất kết nối (Background Task)
+    """
+    global is_sensor_connected, last_sensor_update_time
+    while True:
+        await asyncio.sleep(5)
+        if last_sensor_update_time and is_sensor_connected:
+            tz_vn = timezone(timedelta(hours=7))
+            now_vn = datetime.now(tz_vn)
+            # Chuyển last_sensor_update_time sang aware nếu chưa có tzinfo để so sánh
+            # (server.py đang dùng naive datetime cho DB nhưng aware cho so sánh)
+            # Tuy nhiên server.py truyền vào naive (now_vn.replace(tzinfo=None))
+            # Ta nên đồng bộ hết về naive hoặc aware. 
+            # Trong server.py doc ghi: now_vn = datetime.now(tz_vn).replace(tzinfo=None)
+            
+            diff = (now_vn.replace(tzinfo=None) - last_sensor_update_time).total_seconds()
+            
+            if diff > connection_timeout_seconds:
+                is_sensor_connected = False
+                print(f"--- !!! CẢNH BÁO: Mất kết nối cảm biến (quá {connection_timeout_seconds}s) !!! ---")
+                
+                # Ghi log nguy hiểm
+                if _dashboard_analytics and _dashboard_analytics.danger_collection is not None:
+                    danger_data = {
+                        "_id": now_vn,
+                        "time": now_vn, # MongoDB sẽ tự convert sang UTC
+                        "houseid": "HS001",
+                        "type": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
+                        "value": {}
+                    }
+                    try:
+                        await _dashboard_analytics.danger_collection.insert_one(danger_data)
+                        print("--- Đã lưu log mất kết nối vào database ---")
+                    except Exception as e:
+                        print(f"Lỗi ghi log mất kết nối: {e}")
+
+def start_monitoring():
+    """Bắt đầu chạy background task giám sát"""
+    asyncio.create_task(check_sensor_connection())
+
+# --- ENDPOINTS MODULE 1 ---
+
+@router.get("/sensor-data")
+async def get_latest_data():
+    """
+    UC001.2 - Xem thông số môi trường
+    Trả về dữ liệu môi trường mới nhất cho giao diện web.
+    """
+    import module.module3 as module3
+    if not latest_sensor_data:
+        return {"temp": "--", "humi": "--", "light": "--", "time": "Chờ...", "connected": is_sensor_connected}
+    
+    data_to_send = latest_sensor_data.copy()
+    if "_id" in data_to_send:
+        data_to_send["_id"] = str(data_to_send["_id"])
+    #! Gửi thêm trạng thái thiết bị hiện tại cho Dashboard React
+    data_to_send["numberdevice"] = module3.device_status
+    # Gửi trạng thái kết nối
+    data_to_send["connected"] = is_sensor_connected
+    return data_to_send
+
+@router.get("/sensor-comparison")
+async def get_sensor_comparison():
+    """Trả về dữ liệu so sánh lấy từ DB."""
+    return await _dashboard_analytics.get_sensor_comparison_data()
+
+@router.get("/weekly-trend")
+async def get_weekly_trend(period: str = Query("week")):
+    """Legacy endpoint — redirect to realtime."""
+    return await _dashboard_analytics.get_realtime_trend_data()
+
+@router.get("/realtime-trend")
+async def get_realtime_trend():
+    """Trả về dữ liệu xu hướng realtime từ DB."""
+    return await _dashboard_analytics.get_realtime_trend_data()
+
+@router.get("/sensor-alerts")
+async def get_sensor_alerts():
+    """Trả về cảnh báo lấy từ collection nguy hiểm."""
+    return await _dashboard_analytics.get_sensor_alerts_data()
+
+@router.get("/history-by-date")
+async def get_history_by_date(date: str = Query("2026-03-09")):
+    """Lấy lịch sử cảm biến theo ngày từ DB."""
+    try:
+        cursor = _dashboard_analytics.sensor_collection.find({"date": date}).sort("_id", 1)
+        results = await cursor.to_list(length=100)
+        for item in results:
+            item["_id"] = str(item["_id"])
+        return results
+    except Exception as e:
+        return {"error": str(e)}
 
 # --- IN-MEMORY SENSOR HISTORY (for mock comparison & realtime trend) ---
 # Mỗi entry: {"timestamp": float, "temp": float, "humi": float, "light": int}
@@ -15,7 +139,7 @@ def record_sensor_reading(temp, humi, light):
         "temp": temp, "humi": humi, "light": light,
     })
     if len(_sensor_history) > _MAX_HISTORY:
-        del _sensor_history[:-_MAX_HISTORY]
+        _sensor_history = _sensor_history[-_MAX_HISTORY:]
 
 
 # --- STATIC MOCK FUNCTIONS FOR MOCK_SERVER.PY ---
@@ -133,7 +257,7 @@ class DashboardAnalytics:
         self.tz_vn = timezone(timedelta(hours=7))
 
     async def get_sensor_comparison_data(self):
-        now_vn = datetime.now(self.tz_vn)
+        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         today_start_str = now_vn.strftime("%Y-%m-%d")
         
         # 1. Đo thời gian hệ thống thật sự chạy bằng cách xem record cũ nhất và mới nhất
@@ -207,7 +331,8 @@ class DashboardAnalytics:
             }
 
     async def get_realtime_trend_data(self):
-        now_vn = datetime.now(self.tz_vn)
+        # 1. ĐÃ SỬA: Thêm .replace(tzinfo=None) để khớp với DB
+        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         intervals = [30, 25, 20, 15, 10, 5, 0]
         labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
         
@@ -226,30 +351,18 @@ class DashboardAnalytics:
                 
             oldest_time = oldest_docs[0]["time"]
             
-            # --- FIX TIMEZONE HOÀN CHỈNH ---
-            # Để trừ thời gian lấy diff_total_minutes, ta phải kiểm tra DB trả về loại datetime nào
-            if oldest_time.tzinfo is None:
-                # Nếu DB lưu kiểu Naive (Pymongo mặc định lưu Naive UTC)
-                now_utc = datetime.utcnow()
-                diff_total_minutes = (now_utc - oldest_time).total_seconds() / 60.0
-            else:
-                # Nếu DB lưu kiểu Aware (có múi giờ)
-                diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
+            # 2. ĐÃ SỬA: Xoá bỏ khối code check tzinfo cũ, trừ trực tiếp cực kỳ đơn giản
+            diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
             
             res_temp, res_humi, res_light = [], [], []
 
             for idx, mins in enumerate(intervals):
-                # Nếu mốc thời gian ngoài vùng đã chạy máy -> value = 0 (trống trơn để chart ko vẽ lố)
                 if mins > diff_total_minutes + 1: 
                     res_temp.append({"label": labels[idx], "value": 0})
                     res_humi.append({"label": labels[idx], "value": 0})
                     res_light.append({"label": labels[idx], "value": 0})
                 else:
-                    # LƯU Ý QUAN TRỌNG: Khi Query DB, ta PHẢI DÙNG now_vn (có gắn múi giờ)
-                    # Pymongo sẽ tự động convert sang UTC để match đúng với DB
                     target_time = now_vn - timedelta(minutes=mins)
-                    
-                    # Mở rộng khoảng tìm kiếm lùi về 5 phút để chắc chắn quét trúng dữ liệu
                     min_bound = target_time - timedelta(minutes=5)
                     
                     cursor = self.sensor_collection.find({
@@ -291,7 +404,7 @@ class DashboardAnalytics:
                     
                     # 1. Xử lý múi giờ Việt Nam
                     if isinstance(t, datetime):
-                        vn_time = t + timedelta(hours=7)
+                        vn_time = t
                         time_str = vn_time.strftime("%H:%M %d/%m")
                     else:
                         time_str = str(t)

@@ -47,8 +47,9 @@ function App() {
 
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'devices' && <DevicesTab {...devices} />}
-        {activeTab === 'settings' && <SettingsTab />}
         {activeTab === 'alerts' && <AlertTab addToast={addToast} />}
+        {activeTab === 'settings' && <SettingsTab />}
+        
       </div>
 
       {/* Toast Notifications */}
