@@ -8,7 +8,6 @@ const DEFAULT_DEVICE_STATES = {
   light2: { state: false, brightness: 50 },
   light3: { state: false, brightness: 50 },
   light4: { state: false, brightness: 50 },
-  light5: { state: false, brightness: 50 },
   servo: 'close', // 'open' | 'close'
   fan: 0, // 0..4
 };
@@ -24,7 +23,6 @@ function feStateToBECommands(feState) {
     [2, feState.light2.state],
     [3, feState.light3.state],
     [4, feState.light4.state],
-    [5, feState.light5.state],
     [6, feState.servo === 'open' ? 90 : 0],
     [7, FAN_LEVEL_TO_PERCENT[feState.fan] || 0],
   ];
@@ -40,8 +38,7 @@ function beStatusToFEState(beStatus) {
     light2: { state: !!map[2], brightness: 50 },
     light3: { state: !!map[3], brightness: 50 },
     light4: { state: !!map[4], brightness: 50 },
-    light5: { state: !!map[5], brightness: 50 },
-    servo: (map[6] && map[6] >= 45) ? 'open' : 'close',
+    servo: map[6] === 90 ? 'open' : 'close',
     fan: PERCENT_TO_FAN_LEVEL[map[7]] !== undefined ? PERCENT_TO_FAN_LEVEL[map[7]] : 0,
   };
 }
@@ -328,8 +325,11 @@ export default function useDevices(addToast) {
             if (act.numberdevice === 7) feVal = PERCENT_TO_FAN_LEVEL[beVal] || 0;
             if (act.numberdevice <= 5) feVal = { state: !!beVal, brightness: 50 };
             
-            const keys = ['light1', 'light2', 'light3', 'light4', 'light5', 'servo', 'fan'];
-            next[keys[act.numberdevice - 1]] = feVal;
+            const ID_TO_KEY = { 1: 'light1', 2: 'light2', 3: 'light3', 4: 'light4', 6: 'servo', 7: 'fan' };
+            const key = ID_TO_KEY[act.numberdevice];
+            if (key) {
+              next[key] = feVal;
+            }
           });
           syncToBackend(next);
           return next;
@@ -356,10 +356,13 @@ export default function useDevices(addToast) {
             let feVal = false;
             if (act.numberdevice === 6) feVal = 'close';
             if (act.numberdevice === 7) feVal = 0;
-            if (act.numberdevice <= 5) feVal = { state: false, brightness: 50 };
+            if (act.numberdevice <= 4) feVal = { state: false, brightness: 50 };
             
-            const keys = ['light1', 'light2', 'light3', 'light4', 'light5', 'servo', 'fan'];
-            next[keys[act.numberdevice - 1]] = feVal;
+            const ID_TO_KEY = { 1: 'light1', 2: 'light2', 3: 'light3', 4: 'light4', 6: 'servo', 7: 'fan' };
+            const key = ID_TO_KEY[act.numberdevice];
+            if (key) {
+              next[key] = feVal;
+            }
           });
           syncToBackend(next);
           return next;

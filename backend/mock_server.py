@@ -65,7 +65,7 @@ for i in range(30):
 # ============================================================
 device_status = [
     [1, True], [2, False], [3, True],
-    [4, False], [5, True], [6, 90], [7, 80],
+    [4, False], [6, 90], [7, 80],
 ]
 
 # Cờ nguy hiểm
@@ -126,8 +126,7 @@ mock_scenes = [
         "action": [
             {"numberdevice": 1, "status": False}, {"numberdevice": 2, "status": False},
             {"numberdevice": 3, "status": False}, {"numberdevice": 4, "status": False},
-            {"numberdevice": 5, "status": False}, {"numberdevice": 6, "status": 90},
-            {"numberdevice": 7, "status": 80},
+            {"numberdevice": 6, "status": 90}, {"numberdevice": 7, "status": 80},
         ],
         "isactive": True,
         "createdat": "2026-03-18T10:00:00",
@@ -140,8 +139,7 @@ mock_scenes = [
         "action": [
             {"numberdevice": 1, "status": True}, {"numberdevice": 2, "status": True},
             {"numberdevice": 3, "status": True}, {"numberdevice": 4, "status": False},
-            {"numberdevice": 5, "status": False}, {"numberdevice": 6, "status": 0},
-            {"numberdevice": 7, "status": 0},
+            {"numberdevice": 6, "status": 0}, {"numberdevice": 7, "status": 0},
         ],
         "isactive": True,
         "createdat": "2026-03-18T10:05:00",
@@ -154,8 +152,7 @@ mock_scenes = [
         "action": [
             {"numberdevice": 1, "status": True}, {"numberdevice": 2, "status": False},
             {"numberdevice": 3, "status": False}, {"numberdevice": 4, "status": False},
-            {"numberdevice": 5, "status": False}, {"numberdevice": 6, "status": 0},
-            {"numberdevice": 7, "status": 70},
+            {"numberdevice": 6, "status": 0}, {"numberdevice": 7, "status": 70},
         ],
         "isactive": True,
         "createdat": "2026-03-18T10:10:00",
