@@ -111,6 +111,7 @@ export default function useDevices(addToast) {
 
   const modesRef = useRef(modes);
   modesRef.current = modes;
+  const lastActionTime = useRef(0);
 
   // --- Gửi lệnh điều khiển xuống BE ---
   const syncToBackend = useCallback(async (newState) => {
@@ -125,6 +126,7 @@ export default function useDevices(addToast) {
 
   // --- Cập nhật thiết bị + đồng bộ BE ---
   const updateDevice = useCallback((key, field, value) => {
+    lastActionTime.current = Date.now();
     setDeviceStates(prev => {
       const next = {
         ...prev,
@@ -168,6 +170,8 @@ export default function useDevices(addToast) {
 
     loadDeviceStatus();
     loadModes();
+    const timer = setInterval(loadDeviceStatus, 2000);
+    return () => clearInterval(timer);
   }, []);
 
   // --- LOGIC DRAG & DROP ---

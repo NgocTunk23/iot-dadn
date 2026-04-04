@@ -20,7 +20,9 @@ services:
       - db
     environment:
       - MONGO_URL=mongodb://db:27017
-
+      - GMAIL_SENDER=tothehung2204@gmail.com
+      - GMAIL_PASSWORD=tsnfftndcrbzmehl
+      - TZ=Asia/Ho_Chi_Minh
   # Frontend React
   frontend:
     build: ./frontend
