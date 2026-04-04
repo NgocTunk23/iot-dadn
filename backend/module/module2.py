@@ -17,8 +17,8 @@ DEFAULT_THRESHOLDS = {
 }
 
 DEVICE_NAMES = {
-    1: "Đèn 1 (PIR)", 2: "Đèn 2", 3: "Đèn 3",
-    4: "Đèn 4",       5: "Đèn 5", 6: "Servo (Cửa)", 7: "Quạt",
+    1: "Đèn báo trộm", 2: "Đèn 2", 3: "Đèn 3",
+    4: "Đèn 4",        6: "Servo (Cửa)", 7: "Quạt",
 }
 
 
@@ -180,40 +180,116 @@ class AutomationRuleManager:
             return ops[op](float(current), float(value))
         except (TypeError, ValueError):
             return False
+        
+    @staticmethod
+    def _validate_conditions(conditions: list) -> dict:
+        VALID_SENSORS = {"temp", "humi", "light"}
+        VALID_OPS     = {"gt", "gte", "lt", "lte", "eq"}
+ 
+        if not conditions or not isinstance(conditions, list):
+            return {"ok": False, "message": "Phải có ít nhất một điều kiện."}
+        if len(conditions) > 3:
+            return {"ok": False, "message": "Tối đa 3 điều kiện mỗi kịch bản."}
+ 
+        # Validate từng điều kiện
+        for i, cond in enumerate(conditions):
+            if not all(k in cond for k in ("sensor", "op", "value")):
+                return {"ok": False, "message": f"Điều kiện {i+1} thiếu trường sensor/op/value."}
+            if cond["sensor"] not in VALID_SENSORS:
+                return {"ok": False, "message": f"Cảm biến '{cond['sensor']}' không hợp lệ."}
+            if cond["op"] not in VALID_OPS:
+                return {"ok": False, "message": f"Toán tử '{cond['op']}' không được hỗ trợ."}
+            try:
+                float(cond["value"])
+            except (TypeError, ValueError):
+                return {"ok": False, "message": f"Giá trị điều kiện {i+1} phải là số."}
+ 
+        # Không được trùng sensor
+        sensors_used = [c["sensor"] for c in conditions]
+        if len(sensors_used) != len(set(sensors_used)):
+            return {"ok": False, "message": "Mỗi cảm biến chỉ được xuất hiện một lần trong điều kiện."}
+ 
+        # Kiểm tra xung đột logic cùng sensor (cho trường hợp frontend gửi nhiều điều kiện khác sensor,
+        # nhưng cũng bắt cặp gt/lt trên cùng sensor nếu có)
+        by_sensor: dict[str, list] = {}
+        for cond in conditions:
+            by_sensor.setdefault(cond["sensor"], []).append(cond)
+ 
+        for sensor, conds in by_sensor.items():
+            if len(conds) < 2:
+                continue
+            gt_vals = [float(c["value"]) for c in conds if c["op"] in ("gt", "gte")]
+            lt_vals = [float(c["value"]) for c in conds if c["op"] in ("lt", "lte")]
+            if gt_vals and lt_vals:
+                gt_max = max(gt_vals)
+                lt_min = min(lt_vals)
+                if gt_max >= lt_min:
+                    return {
+                        "ok": False,
+                        "message": (
+                            f"Xung đột điều kiện trên {sensor}: "
+                            f"không thể vừa > {gt_max} vừa < {lt_min}."
+                        ),
+                    }
+            # eq xung đột với gt/lt
+            eq_vals = [float(c["value"]) for c in conds if c["op"] == "eq"]
+            if eq_vals:
+                for ev in eq_vals:
+                    for gv in gt_vals:
+                        if ev <= gv:
+                            return {"ok": False, "message": f"Xung đột: {sensor} = {ev} mâu thuẫn với > {gv}."}
+                    for lv in lt_vals:
+                        if ev >= lv:
+                            return {"ok": False, "message": f"Xung đột: {sensor} = {ev} mâu thuẫn với < {lv}."}
+ 
+        return {"ok": True}
 
     async def add_rule(self, houseid: str, name: str,
                         condition: dict, actions: list,
-                        enabled: bool = True) -> dict:
+                        enabled: bool = True,
+                        conditions: list = None) -> dict:
+        """
+        Nhận conditions (mảng mới) hoặc fallback về condition đơn (tương thích ngược).
+        Tất cả điều kiện trong mảng phải thỏa (AND logic) thì kịch bản mới kích hoạt.
+        """
         if not name:
             return {"status": "error", "message": "Thiếu tên kịch bản."}
-        if not condition or not all(k in condition for k in ("sensor", "op", "value")):
-            return {"status": "error", "message": "Điều kiện không hợp lệ."}
         if not actions:
             return {"status": "error", "message": "Thiếu hành động phản hồi."}
-        if condition.get("op") not in self.OPERATORS:
-            return {"status": "error", "message": "Toán tử không được hỗ trợ."}
-
-        try:
-            condition = {**condition, "value": float(condition["value"])}
-        except (TypeError, ValueError):
-            return {"status": "error", "message": "Giá trị điều kiện phải là số."}
-
+ 
+        # Chuẩn hóa: ưu tiên conditions mảng, fallback về condition đơn
+        if conditions and isinstance(conditions, list) and len(conditions) > 0:
+            conds_list = conditions
+        elif condition and isinstance(condition, dict):
+            conds_list = [condition]
+        else:
+            return {"status": "error", "message": "Thiếu điều kiện kích hoạt."}
+ 
+        # Validate + conflict check
+        check = self._validate_conditions(conds_list)
+        if not check["ok"]:
+            return {"status": "error", "message": check["message"]}
+ 
+        # Chuẩn hóa value sang float
+        conds_list = [{**c, "value": float(c["value"])} for c in conds_list]
+ 
         scenario_id = f"{houseid}_{name.replace(' ', '_')}"
         doc = {
             "_id":        scenario_id,
             "scenarioid": scenario_id,
             "houseid":    houseid,
             "name":       name,
-            "condition":  condition,   # {sensor, op, value} — lưu nguyên
-            "action":     actions,     # ERD field "action" (số ít)
-            "isactive":   enabled,     # ERD field "isactive"
+            "conditions": conds_list,           # mảng điều kiện AND mới
+            "condition":  conds_list[0],        # tương thích ngược: điều kiện đầu tiên
+            "action":     actions,
+            "isactive":   enabled,
             "createdat":  datetime.now(VN_TZ),
         }
         await self.col.update_one({"_id": scenario_id}, {"$set": doc}, upsert=True)
         return {"status": "success",
                 "message": "Tạo kịch bản thành công.",
                 "scenarioid": scenario_id}
-
+    
     async def delete_rule(self, houseid: str, name: str) -> dict:
         scenario_id = f"{houseid}_{name.replace(' ', '_')}"
         result = await self.col.delete_one({"_id": scenario_id})
@@ -237,12 +313,17 @@ class AutomationRuleManager:
         for r in rules:
             action_list = r.get("action", [])
             scenario_id = str(r.get("_id", ""))
+            conds = r.get("conditions")
+            if not conds:
+                single = r.get("condition", {})
+                conds  = [single] if single else []
             output.append({
                 "_id":        scenario_id,
                 "scenarioid": scenario_id,
                 "houseid":    r.get("houseid"),
                 "name":       r.get("name"),
-                "condition":  r.get("condition", {}),
+                "conditions": conds,        
+                "condition":  conds[0] if conds else {},
                 "action":     action_list,
                 "actions":    action_list,
                 "isactive":   r.get("isactive", True),
@@ -261,8 +342,11 @@ class AutomationRuleManager:
         triggered_rules = []
 
         for rule in rules:
-            cond = rule.get("condition", {})
-            if not self._check_condition(cond, sensor_data):
+            conds = rule.get("conditions")
+            if not conds:
+                single = rule.get("condition", {})
+                conds  = [single] if single else []
+            if not conds or not all(self._check_condition(c, sensor_data) for c in conds):
                 continue
 
             rule_changes = []
@@ -492,9 +576,10 @@ async def create_automation_rule(request: Request, payload: dict = Body(...)):
     houseid   = payload.get("houseid", "HS001")
     name      = payload.get("name")
     condition = payload.get("condition")
+    conditions = payload.get("conditions")
     actions   = payload.get("actions") or payload.get("action")
     enabled   = payload.get("enabled", payload.get("isactive", True))
-    res = await mgr.add_rule(houseid, name, condition, actions, enabled)
+    res = await mgr.add_rule(houseid, name, condition, actions, enabled, conditions=conditions)
     if res["status"] == "error":
         return JSONResponse(status_code=400, content=res)
     return res
