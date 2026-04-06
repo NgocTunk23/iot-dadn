@@ -970,6 +970,12 @@ function AutoRuleTab({ addToast }) {
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
+  // Polling mỗi 5s để cập nhật is_active_now (kịch bản nào đang chạy)
+  useEffect(() => {
+    const timer = setInterval(fetchRules, 5000);
+    return () => clearInterval(timer);
+  }, [fetchRules]);
+
   const openCreate = () => { setDraft(JSON.parse(JSON.stringify(EMPTY_RULE))); setEditName(null); setShowForm(true); };
   const openEdit = (rule) => {
     /* CHANGE 5: hỗ trợ cả conditions (mảng mới) lẫn condition (cũ) */
@@ -1688,14 +1694,23 @@ function AutoRuleTab({ addToast }) {
           ] || "var(--accent-blue)";
         const SIcon = SENSOR_ICON_MAP[firstCond?.sensor];
         const actionList = rule.actions || rule.action || [];
+        // ACTIVE-RULE HIGHLIGHT: kịch bản đang thực sự chạy trên phần cứng
+        const isRunning = !!rule.is_active_now;
         return (
           <Card
             key={rule._id}
             style={{
-              borderLeft: `3px solid ${rule.enabled ? sColor : "var(--border-color)"}`,
-              boxShadow: rule.enabled
-                ? `0 2px 20px ${sColor}14, 0 2px 16px rgba(0,0,0,0.14)`
+              borderLeft: `${isRunning ? "4px" : "3px"} solid ${isRunning ? sColor : rule.enabled ? sColor : "var(--border-color)"}`,
+              boxShadow: isRunning
+                ? `0 0 0 1.5px ${sColor}55, 0 4px 28px ${sColor}40, 0 2px 16px rgba(0,0,0,0.18)`
+                : rule.enabled
+                  ? `0 2px 20px ${sColor}14, 0 2px 16px rgba(0,0,0,0.14)`
+                  : undefined,
+              background: isRunning
+                ? `linear-gradient(135deg, ${sColor}0d 0%, rgba(0,0,0,0) 60%)`
                 : undefined,
+              opacity: rule.enabled ? 1 : 0.55,
+              transition: "all 0.4s ease",
             }}
           >
             <div
@@ -1716,12 +1731,13 @@ function AutoRuleTab({ addToast }) {
                     marginBottom: "10px",
                   }}
                 >
-                  {SIcon && <SIcon size={28} />}
+                  {SIcon && <SIcon size={isRunning ? 34 : 28} />}
                   <span
                     style={{
                       fontWeight: 700,
-                      fontSize: "0.98rem",
-                      color: "var(--text-primary)",
+                      fontSize: isRunning ? "1.05rem" : "0.98rem",
+                      color: isRunning ? sColor : "var(--text-primary)",
+                      transition: "all 0.3s ease",
                     }}
                   >
                     {rule.name}
@@ -1730,6 +1746,24 @@ function AutoRuleTab({ addToast }) {
                     ok={rule.enabled}
                     label={rule.enabled ? "Đang bật" : "Tắt"}
                   />
+                  {isRunning && (
+                    <span style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontSize: "0.72rem",
+                      fontWeight: 800,
+                      color: sColor,
+                      background: `${sColor}20`,
+                      border: `1px solid ${sColor}55`,
+                      borderRadius: "20px",
+                      padding: "2px 10px",
+                      letterSpacing: "0.04em",
+                      animation: "boltFlicker 1.6s ease-in-out infinite",
+                    }}>
+                      ⚡ ĐANG CHẠY
+                    </span>
+                  )}
                 </div>
                 {/* CHANGE 5: hiển thị nhiều điều kiện */}
                 <div
