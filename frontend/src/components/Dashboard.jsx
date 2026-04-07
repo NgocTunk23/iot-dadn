@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import LogSection from '../components/LogSection';
+// import LogSection from "../components/LogSection";
 import {
   Chart,
   LineController,

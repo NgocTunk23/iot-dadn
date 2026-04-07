@@ -1,5 +1,6 @@
 # Stage 1: Build
-FROM node:18-alpine as build-stage
+# Thay đổi từ node:18-alpine thành:
+FROM node:22-alpine AS build-stage
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
