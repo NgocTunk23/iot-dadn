@@ -69,6 +69,15 @@ select option {
   color: #f8fafc;
   padding: 8px;
 }
+  input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
 .thermo-rect   { animation: thermoPulse 2.2s ease-in-out infinite; transform-origin: bottom center; }
 .humi-drop     { animation: humiFloat 2.4s ease-in-out infinite; }
 .light-rays    { animation: lightSpin 7s linear infinite; transform-origin: 29px 29px; }
@@ -187,6 +196,13 @@ const EmailIconSVG = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <rect x="2" y="5" width="20" height="14" rx="3" stroke="#EA4335" strokeWidth="1.7" fill="rgba(234,67,53,0.08)"/>
     <path d="M2 8.5l10 6.5 10-6.5" stroke="#EA4335" strokeWidth="1.7" strokeLinecap="round"/>
+  </svg>
+);
+
+const ResetIconSVG = ({ size = 16, color = '#ef4444' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
   </svg>
 );
 
@@ -409,72 +425,344 @@ function ThresholdTab({ addToast }) {
 
   if (!draft) return <p style={{ color: 'var(--text-secondary)' }}>Đang tải...</p>;
 
+  /* --- CHANGE 1: Nút tăng/giảm +/- cho threshold --- */
+  const StepBtn = ({ color, onClick, children }) => (
+    <button onClick={onClick} style={{
+      width: '36px', height: '36px', borderRadius: '10px', border: `1.5px solid ${color}55`,
+      background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`,
+      color: color, fontWeight: 900, fontSize: '1.2rem',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, transition: 'all 0.18s', lineHeight: 1,
+      boxShadow: `0 2px 8px ${color}22`,
+    }}
+    onMouseEnter={e => { e.currentTarget.style.background = `linear-gradient(135deg, ${color}35 0%, ${color}18 100%)`; e.currentTarget.style.transform = 'scale(1.1)'; }}
+    onMouseLeave={e => { e.currentTarget.style.background = `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`; e.currentTarget.style.transform = 'scale(1)'; }}
+    >{children}</button>
+  );
+
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button onClick={handleReset} style={{
-          padding: '9px 18px', borderRadius: '10px',
-          background: 'rgba(234,67,53,0.08)', border: '1px solid rgba(234,67,53,0.3)',
-          color: 'var(--accent-red)', fontWeight: 700, fontSize: '0.85rem',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s',
-        }}>🔄 Reset về mặc định</button>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          marginBottom: "16px",
+        }}
+      >
+        <button
+          onClick={handleReset}
+          style={{
+            padding: "8px 16px",
+            borderRadius: "10px",
+            background:
+              "linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%)",
+            border: "1.5px solid rgba(239, 68, 68, 0.35)",
+            color: "#ef4444",
+            fontWeight: 700,
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+            boxShadow: "0 2px 10px rgba(239, 68, 68, 0.1)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background =
+              "linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(239, 68, 68, 0.08) 100%)";
+            e.currentTarget.style.transform = "translateY(-2px)";
+            e.currentTarget.style.boxShadow =
+              "0 6px 16px rgba(239, 68, 68, 0.25)";
+            e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.5)";
+            // Hiệu ứng xoay icon nhẹ khi hover
+            const svg = e.currentTarget.querySelector("svg");
+            if (svg) svg.style.transform = "rotate(-45deg)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background =
+              "linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%)";
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow =
+              "0 2px 10px rgba(239, 68, 68, 0.1)";
+            e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.35)";
+            const svg = e.currentTarget.querySelector("svg");
+            if (svg) svg.style.transform = "rotate(0deg)";
+          }}
+        >
+          <div style={{ transition: "transform 0.3s ease", display: "flex" }}>
+            <ResetIconSVG size={16} color="#ef4444" />
+          </div>
+          Reset về mặc định
+        </button>
       </div>
-      {SENSORS.map(s => {
-        const IconComp = SENSOR_ICON_MAP[s.key];
-        const color    = SENSOR_COLOR[s.key];
-        return (
-          <Card key={s.key}>
-            <SectionTitle color={color}>
-              <IconComp size={22} />
-              {s.label}
-              <span style={{ fontSize: '0.76rem', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '2px' }}>({s.unit})</span>
-            </SectionTitle>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '20px' }}>
-              {['min', 'max'].map(bound => (
-                <div key={bound} style={{
-                  background: bound === 'min' ? 'linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)' : 'linear-gradient(135deg, rgba(234,67,53,0.06) 0%, var(--bg-card-inner) 100%)',
-                  borderRadius: '10px', padding: '12px',
-                  border: `1px solid ${bound === 'min' ? 'rgba(0,209,255,0.18)' : 'rgba(234,67,53,0.18)'}`,
-                }}>
-                  <label style={{
-                    display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', fontWeight: 700,
-                    marginBottom: '8px', color: bound === 'min' ? '#00D1FF' : 'var(--accent-red)',
-                    letterSpacing: '0.05em', textTransform: 'uppercase',
-                  }}>
-                    <span style={{ width: '3px', height: '12px', borderRadius: '2px', display: 'inline-block', background: bound === 'min' ? '#00D1FF' : 'var(--accent-red)', boxShadow: `0 0 5px ${bound === 'min' ? '#00D1FF88' : 'rgba(234,67,53,0.6)'}` }} />
-                    {bound === 'min' ? '↓ Ngưỡng dưới (Min)' : '↑ Ngưỡng trên (Max)'}
-                  </label>
-                  <input type="number" style={{ ...inputStyle, width: '100%' }}
-                    value={draft[s.key]?.[bound] ?? ''}
-                    onChange={e => { const val = e.target.value === '' ? '' : parseFloat(e.target.value); setDraft(prev => ({ ...prev, [s.key]: { ...prev[s.key], [bound]: val } })); }}
-                  />
+
+      {/* CHANGE 2: Grid 3 cột ngang hàng trên desktop, 1 cột trên mobile */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: "18px",
+          alignItems: "start",
+        }}
+      >
+        {SENSORS.map((s) => {
+          const IconComp = SENSOR_ICON_MAP[s.key];
+          const color = SENSOR_COLOR[s.key];
+
+          /* --- CHANGE 3: Icon lớn + animated background cho header mỗi card --- */
+          const bgGradient = {
+            temp: "radial-gradient(ellipse at top left, rgba(255,159,67,0.13) 0%, transparent 70%)",
+            humi: "radial-gradient(ellipse at top left, rgba(0,209,255,0.13) 0%, transparent 70%)",
+            light:
+              "radial-gradient(ellipse at top left, rgba(255,193,7,0.13) 0%, transparent 70%)",
+          }[s.key];
+
+          return (
+            <div
+              key={s.key}
+              className="card-hover-lift"
+              style={{
+                background: `linear-gradient(160deg, var(--bg-card) 0%, rgba(0,0,0,0.08) 100%)`,
+                borderRadius: "18px",
+                border: `1px solid ${color}33`,
+                padding: "22px",
+                position: "relative",
+                overflow: "hidden",
+                boxShadow: `0 2px 20px ${color}14, 0 2px 16px rgba(0,0,0,0.14)`,
+              }}
+            >
+              {/* glow bg */}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: bgGradient,
+                  pointerEvents: "none",
+                }}
+              />
+
+              {/* Header với icon to, sinh động */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  marginBottom: "20px",
+                  paddingBottom: "16px",
+                  borderBottom: `1px solid ${color}22`,
+                }}
+              >
+                <div
+                  style={{
+                    width: "62px",
+                    height: "62px",
+                    borderRadius: "16px",
+                    background: `linear-gradient(135deg, ${color}22 0%, ${color}0a 100%)`,
+                    border: `1.5px solid ${color}44`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: `0 4px 18px ${color}30, inset 0 1px 0 ${color}22`,
+                    flexShrink: 0,
+                  }}
+                >
+                  <IconComp size={36} />
                 </div>
-              ))}
+                <div>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      fontSize: "1.05rem",
+                      color: color,
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {s.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.76rem",
+                      color: "var(--text-secondary)",
+                      marginTop: "2px",
+                    }}
+                  >
+                    Đơn vị:{" "}
+                    <span style={{ color: color, fontWeight: 700 }}>
+                      {s.unit}
+                    </span>
+                    &nbsp;·&nbsp;Khoảng: {s.min} → {s.max}
+                  </div>
+                </div>
+              </div>
+
+              {/* Min / Max với nút +/- */}
+              {["min", "max"].map((bound) => {
+                const bColor = bound === "min" ? "#00D1FF" : "#FF6B6B";
+                const step = s.key === "temp" ? 0.5 : 1;
+                const curVal = parseFloat(draft[s.key]?.[bound]) || 0;
+                const otherBound = bound === "min" ? "max" : "min";
+                const otherVal =
+                  parseFloat(draft[s.key]?.[otherBound]) ??
+                  (bound === "min" ? s.max : s.min);
+
+                const adjustVal = (delta) => {
+                  const newVal = Math.round((curVal + delta) * 10) / 10;
+                  const clamped = clamp(newVal, s.min, s.max);
+                  setDraft((prev) => ({
+                    ...prev,
+                    [s.key]: { ...prev[s.key], [bound]: clamped },
+                  }));
+                };
+
+                return (
+                  <div
+                    key={bound}
+                    style={{
+                      marginBottom: "14px",
+                      background: `linear-gradient(135deg, ${bColor}08 0%, transparent 100%)`,
+                      borderRadius: "12px",
+                      padding: "12px 14px",
+                      border: `1px solid ${bColor}22`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "0.72rem",
+                        fontWeight: 700,
+                        color: bColor,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        marginBottom: "10px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "3px",
+                          height: "10px",
+                          borderRadius: "2px",
+                          background: bColor,
+                          boxShadow: `0 0 5px ${bColor}88`,
+                          display: "inline-block",
+                        }}
+                      />
+                      {bound === "min" ? "↓ Ngưỡng dưới" : "↑ Ngưỡng trên"}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <StepBtn color={bColor} onClick={() => adjustVal(-step)}>
+                        −
+                      </StepBtn>
+                      <div style={{ flex: 1, position: "relative" }}>
+                        <input
+                          type="number"
+                          style={{
+                            ...inputStyle,
+                            width: "100%",
+                            textAlign: "center",
+                            fontWeight: 800,
+                            fontSize: "1.1rem",
+                            color: bColor,
+                            paddingRight: "32px",
+                          }}
+                          value={draft[s.key]?.[bound] ?? ""}
+                          onChange={(e) => {
+                            const val =
+                              e.target.value === ""
+                                ? ""
+                                : parseFloat(e.target.value);
+                            setDraft((prev) => ({
+                              ...prev,
+                              [s.key]: { ...prev[s.key], [bound]: val },
+                            }));
+                          }}
+                        />
+                        <span
+                          style={{
+                            position: "absolute",
+                            right: "10px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            fontSize: "0.8rem",
+                            color: bColor,
+                            fontWeight: 600,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {s.unit}
+                        </span>
+                      </div>
+                      <StepBtn color={bColor} onClick={() => adjustVal(step)}>
+                        +
+                      </StepBtn>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <DualThresholdSlider
+                sensor={s}
+                draft={draft}
+                setDraft={setDraft}
+                activeThumb={activeThumb}
+                setActiveThumb={setActiveThumb}
+                getNum={getNum}
+                clamp={clamp}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: "10px",
+                }}
+              >
+                <button
+                  className="btn btn-primary"
+                  disabled={saving}
+                  onClick={() => handleSave(s.key)}
+                  style={{
+                    background: `linear-gradient(135deg, ${color}cc 0%, ${color}88 100%)`,
+                    border: "none",
+                    color: "#fff",
+                    fontWeight: 700,
+                    padding: "8px 20px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "0.88rem",
+                    boxShadow: `0 4px 14px ${color}44`,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {saving ? "Lưu..." : "Lưu"}
+                </button>
+              </div>
             </div>
-            <DualThresholdSlider sensor={s} draft={draft} setDraft={setDraft}
-              activeThumb={activeThumb} setActiveThumb={setActiveThumb} getNum={getNum} clamp={clamp} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-              <button className="btn btn-primary" disabled={saving} onClick={() => handleSave(s.key)}>
-                {saving ? 'Đang lưu...' : 'Lưu'}
-              </button>
-            </div>
-          </Card>
-        );
-      })}
+          );
+        })}
+      </div>
     </>
   );
 }
 
 /* ─────────────────── 2. KÊNH THÔNG BÁO ─────────────────── */
+/* ─────────────────── 2. KÊNH THÔNG BÁO ─────────────────── */
 function ChannelTab({ addToast }) {
   const [channels, setChannels] = useState({ telegram: { enabled: false }, email: { enabled: false } });
   const [draft, setDraft]       = useState(null);
   const [saving, setSaving]     = useState('');
+  const prevDraftRef = useRef(null);
 
   useEffect(() => {
     axios.get(`${API}/notification-channels?houseid=HS001`)
-      .then(r => { setChannels(r.data); setDraft(JSON.parse(JSON.stringify(r.data))); })
-      .catch(() => setDraft({ telegram: { enabled: false }, email: { enabled: false } }));
+      .then(r => { setChannels(r.data); const d = JSON.parse(JSON.stringify(r.data)); setDraft(d); prevDraftRef.current = JSON.parse(JSON.stringify(d)); })
+      .catch(() => { const d = { telegram: { enabled: false }, email: { enabled: false } }; setDraft(d); prevDraftRef.current = JSON.parse(JSON.stringify(d)); });
   }, []);
 
   const handleSave = async (channel) => {
@@ -486,6 +774,7 @@ function ChannelTab({ addToast }) {
     try {
       await axios.post(`${API}/notification-channels`, body);
       setChannels(prev => ({ ...prev, [channel]: d }));
+      prevDraftRef.current = JSON.parse(JSON.stringify({ ...prevDraftRef.current, [channel]: d }));
       addToast(`✅ Đã cập nhật kênh ${channel === 'telegram' ? 'Telegram' : 'Email'}!`, 'success');
     } catch (e) { addToast(e.response?.data?.message || 'Lỗi cập nhật kênh!', 'error'); }
     setSaving('');
@@ -494,61 +783,101 @@ function ChannelTab({ addToast }) {
   const setField = (channel, field, value) =>
     setDraft(prev => ({ ...prev, [channel]: { ...prev[channel], [field]: value } }));
 
+  const handleToggle = async (channel, newVal) => {
+    setField(channel, 'enabled', newVal);
+    setSaving(channel);
+    const d = { ...(draft[channel] || {}), enabled: newVal };
+    const body = { houseid: 'HS001', channel, enabled: newVal };
+    if (channel === 'telegram') { body.bot_token = d.bot_token || ''; body.chat_id = d.chat_id || ''; }
+    if (channel === 'email')    { body.address = d.address || ''; }
+    try {
+      await axios.post(`${API}/notification-channels`, body);
+      setChannels(prev => ({ ...prev, [channel]: d }));
+      prevDraftRef.current = JSON.parse(JSON.stringify({ ...prevDraftRef.current, [channel]: d }));
+      addToast(`${newVal ? '🔔 Đã bật' : '🔕 Đã tắt'} kênh ${channel === 'telegram' ? 'Telegram' : 'Email'}!`, 'success');
+    } catch (e) { addToast('Lỗi thay đổi trạng thái!', 'error'); }
+    setSaving('');
+  };
+
   if (!draft) return <p style={{ color: 'var(--text-secondary)' }}>Đang tải...</p>;
+
+  /* SỬA LỖI TẠI ĐÂY: Đổi tên thành chữ thường và coi nó như một hàm render */
+  const renderChannelCard = (channel, accentColor, icon, title, fields) => {
+    const isEnabled = !!draft[channel]?.enabled;
+    const isSaving  = saving === channel;
+    return (
+      <div className="card-hover-lift" style={{
+        borderRadius: '18px', padding: '24px', marginBottom: '20px',
+        border: `1.5px solid ${isEnabled ? accentColor + '55' : 'var(--border-color)'}`,
+        background: isEnabled
+          ? `linear-gradient(160deg, ${accentColor}12 0%, ${accentColor}05 50%, rgba(0,0,0,0.05) 100%)`
+          : 'linear-gradient(160deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.18) 100%)',
+        boxShadow: isEnabled
+          ? `0 4px 28px ${accentColor}20, 0 1px 0 ${accentColor}18 inset`
+          : '0 2px 16px rgba(0,0,0,0.18)',
+        transition: 'all 0.4s cubic-bezier(0.4,0,0.2,1)',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {isEnabled && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)`, pointerEvents: 'none' }} />}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', paddingBottom: '14px', paddingLeft: '14px', borderBottom: `1px solid ${isEnabled ? accentColor + '33' : 'var(--border-color)'}`, position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 0, top: '2px', bottom: '14px', width: '3px', borderRadius: '4px', background: `linear-gradient(180deg, ${accentColor}, ${accentColor}44)`, boxShadow: `0 0 8px ${accentColor}66` }} />
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0, opacity: isEnabled ? 1 : 0.55, transition: 'opacity 0.3s' }}>
+            {icon}
+            <span style={{ color: isEnabled ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{title}</span>
+            <StatusBadge ok={channels[channel]?.enabled} label={channels[channel]?.enabled ? 'Đang bật' : 'Tắt'} />
+          </h3>
+          <label className="toggle-switch" style={{ position: 'relative', zIndex: 1 }}>
+            <input type="checkbox" checked={isEnabled} onChange={e => handleToggle(channel, e.target.checked)} />
+            <span className="slider"></span>
+          </label>
+        </div>
+
+        <div style={{ opacity: isEnabled ? 1 : 0.38, pointerEvents: isEnabled ? 'auto' : 'none', transition: 'opacity 0.35s' }}>
+          {fields}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+            <button className="btn btn-primary" disabled={isSaving} onClick={() => handleSave(channel)}
+              style={{ background: `linear-gradient(135deg, ${accentColor}cc 0%, ${accentColor}88 100%)`, border: 'none', color: '#fff', fontWeight: 700, padding: '8px 20px', borderRadius: '10px', cursor: 'pointer', fontSize: '0.88rem', boxShadow: `0 4px 14px ${accentColor}44`, transition: 'all 0.2s' }}>
+              {isSaving ? 'Lưu...' : 'Lưu thông tin'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', paddingLeft: '14px', borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
-          <span style={{ position: 'absolute', left: 0, top: '2px', bottom: '14px', width: '3px', borderRadius: '4px', background: 'linear-gradient(180deg, #2AABEE, #2AABEE44)', boxShadow: '0 0 8px #2AABEE66' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-            <TelegramIconSVG size={22} />
-            <span>Telegram Bot</span>
-            <StatusBadge ok={channels.telegram?.enabled} label={channels.telegram?.enabled ? 'Đang bật' : 'Tắt'} />
-          </h3>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={!!draft.telegram?.enabled} onChange={e => setField('telegram', 'enabled', e.target.checked)} />
-            <span className="slider"></span>
-          </label>
-        </div>
-        <InputRow label="Bot Token">
-          <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} placeholder="7123456789:AAF..."
-            value={draft.telegram?.bot_token || ''} onChange={e => setField('telegram', 'bot_token', e.target.value)} />
-        </InputRow>
-        <InputRow label="Chat ID">
-          <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} placeholder="123456789"
-            value={draft.telegram?.chat_id || ''} onChange={e => setField('telegram', 'chat_id', e.target.value)} />
-        </InputRow>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-primary" disabled={saving === 'telegram'} onClick={() => handleSave('telegram')}>
-            {saving === 'telegram' ? 'Đang lưu...' : 'Lưu thông tin'}
-          </button>
-        </div>
-      </Card>
+      {/* SỬA LỖI TẠI ĐÂY: Gọi hàm render trực tiếp thay vì dùng thẻ <ChannelCard /> */}
+      {renderChannelCard(
+        "telegram",
+        "#2AABEE",
+        <TelegramIconSVG size={22} />,
+        "Telegram Bot",
+        <>
+          <InputRow label="Bot Token">
+            <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} placeholder="7123456789:AAF..."
+              value={draft.telegram?.bot_token || ''} onChange={e => setField('telegram', 'bot_token', e.target.value)} />
+          </InputRow>
+          <InputRow label="Chat ID">
+            <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} placeholder="123456789"
+              value={draft.telegram?.chat_id || ''} onChange={e => setField('telegram', 'chat_id', e.target.value)} />
+          </InputRow>
+        </>
+      )}
 
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', paddingLeft: '14px', borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
-          <span style={{ position: 'absolute', left: 0, top: '2px', bottom: '14px', width: '3px', borderRadius: '4px', background: 'linear-gradient(180deg, #EA4335, #EA433544)', boxShadow: '0 0 8px #EA433566' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-            <EmailIconSVG size={22} />
-            <span>Email (Gmail)</span>
-            <StatusBadge ok={channels.email?.enabled} label={channels.email?.enabled ? 'Đang bật' : 'Tắt'} />
-          </h3>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={!!draft.email?.enabled} onChange={e => setField('email', 'enabled', e.target.checked)} />
-            <span className="slider"></span>
-          </label>
-        </div>
-        <InputRow label="Email nhận">
-          <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} type="email" placeholder="recipient@gmail.com"
-            value={draft.email?.address || ''} onChange={e => setField('email', 'address', e.target.value)} />
-        </InputRow>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-primary" disabled={saving === 'email'} onClick={() => handleSave('email')}>
-            {saving === 'email' ? 'Đang lưu...' : 'Lưu thông tin'}
-          </button>
-        </div>
-      </Card>
+      {renderChannelCard(
+        "email",
+        "#EA4335",
+        <EmailIconSVG size={22} />,
+        "Email (Gmail)",
+        <>
+          <InputRow label="Email nhận">
+            <input style={{ ...inputStyle, flex: 1, minWidth: '200px' }} type="email" placeholder="recipient@gmail.com"
+              value={draft.email?.address || ''} onChange={e => setField('email', 'address', e.target.value)} />
+          </InputRow>
+        </>
+      )}
     </>
   );
 }
@@ -564,13 +893,67 @@ const OP_OPTS      = [
 ];
 const SENSOR_LABEL = { temp: 'Nhiệt độ (°C)', humi: 'Độ ẩm (%)', light: 'Ánh sáng (%)' };
 const DEVICE_OPTS  = [
-  { id: 1, label: '💡 Đèn 1' }, { id: 2, label: '💡 Đèn 2' },
+  { id: 1, label: '🚨 Đèn báo trộm' }, { id: 2, label: '💡 Đèn 2' },
   { id: 3, label: '💡 Đèn 3' }, { id: 4, label: '💡 Đèn 4' },
-  { id: 5, label: '💡 Đèn 5' }, { id: 6, label: '🚪 Servo' },
+  { id: 6, label: '🚪 Servo' },
   { id: 7, label: '🌀 Quạt (0-100%)' },
 ];
 const FAN_LEVELS   = [70, 80, 90, 100];
-const EMPTY_RULE   = { name: '', enabled: true, condition: { sensor: 'temp', op: 'gt', value: 35 }, actions: [{ numberdevice: 7, status: 100 }] };
+/* CHANGE 5: EMPTY_RULE nay dùng conditions (mảng), thay vì condition đơn lẻ */
+const EMPTY_RULE   = {
+  name: '', enabled: true,
+  conditions: [{ sensor: 'temp', op: 'gt', value: 35 }],
+  actions: []
+};
+
+const StatusPicker = ({ value, onChange, accentColor = '#10b981' }) => {
+  const options = [
+    { val: 'true', label: 'Bật', icon: '✅', color: '#10b981' },
+    { val: 'false', label: 'Tắt', icon: '⭕', color: '#ef4444' }
+  ];
+
+  return (
+    <div style={{
+      display: 'flex',
+      background: 'rgba(0,0,0,0.2)',
+      padding: '4px',
+      borderRadius: '10px',
+      border: '1px solid var(--border-color)',
+      gap: '4px'
+    }}>
+      {options.map(opt => {
+        const isActive = String(value) === opt.val;
+        return (
+          <button
+            key={opt.val}
+            onClick={() => onChange(opt.val === 'true')}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '7px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              background: isActive ? opt.color : 'transparent',
+              color: isActive ? '#fff' : 'var(--text-secondary)',
+              boxShadow: isActive ? `0 4px 12px ${opt.color}44` : 'none',
+              transform: isActive ? 'scale(1.05)' : 'scale(1)',
+            }}
+          >
+            <span style={{ fontSize: '1rem', filter: isActive ? 'none' : 'grayscale(1)' }}>
+              {opt.icon}
+            </span>
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 function AutoRuleTab({ addToast }) {
   const [rules, setRules]       = useState([]);
@@ -578,6 +961,8 @@ function AutoRuleTab({ addToast }) {
   const [draft, setDraft]       = useState(EMPTY_RULE);
   const [editName, setEditName] = useState(null);
   const [saving, setSaving]     = useState(false);
+  /* CHANGE 5: state cho Device Picker popup */
+  const [showDevicePicker, setShowDevicePicker] = useState(false);
 
   const fetchRules = useCallback(async () => {
     try { const r = await axios.get(`${API}/automation-rules?houseid=HS001`); setRules(r.data || []); } catch {}
@@ -585,12 +970,22 @@ function AutoRuleTab({ addToast }) {
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
+  // Polling mỗi 5s để cập nhật is_active_now (kịch bản nào đang chạy)
+  useEffect(() => {
+    const timer = setInterval(fetchRules, 5000);
+    return () => clearInterval(timer);
+  }, [fetchRules]);
+
   const openCreate = () => { setDraft(JSON.parse(JSON.stringify(EMPTY_RULE))); setEditName(null); setShowForm(true); };
   const openEdit = (rule) => {
+    /* CHANGE 5: hỗ trợ cả conditions (mảng mới) lẫn condition (cũ) */
+    const conds = rule.conditions
+      ? rule.conditions.map(c => ({ sensor: c.sensor || 'temp', op: c.op || 'gt', value: c.value || 0 }))
+      : [{ sensor: rule.condition?.sensor || 'temp', op: rule.condition?.op || 'gt', value: rule.condition?.value || 0 }];
     setDraft({
       name: rule.name,
       enabled: rule.enabled,
-      condition: { sensor: rule.condition?.sensor || 'temp', op: rule.condition?.op || 'gt', value: rule.condition?.value || 0 },
+      conditions: conds,
       actions: (rule.actions || rule.action || []).map(a => ({ numberdevice: parseInt(a.numberdevice), status: a.status }))
     });
     setEditName(rule.name);
@@ -605,13 +1000,37 @@ function AutoRuleTab({ addToast }) {
 
   const handleSave = async () => {
     if (!draft.name.trim()) { addToast('Tên kịch bản không được rỗng!', 'error'); return; }
-    const condValue = parseFloat(draft.condition.value);
-    if (isNaN(condValue)) { addToast('Giá trị điều kiện phải là số!', 'error'); return; }
+    if (draft.actions.length === 0) {
+      addToast('Bạn chưa thêm thiết bị phản hồi cho kịch bản!', 'error');
+      return;
+    }
+    for (const c of draft.conditions) {
+      if (isNaN(parseFloat(c.value))) { addToast('Giá trị điều kiện phải là số!', 'error'); return; }
+    }
+    /* CHANGE 5: kiểm tra conflict - cùng sensor + op đối lập */
+    const sensorConds = {};
+    for (const c of draft.conditions) {
+      if (!sensorConds[c.sensor]) sensorConds[c.sensor] = [];
+      sensorConds[c.sensor].push(c);
+    }
+    for (const [sensor, conds] of Object.entries(sensorConds)) {
+      if (conds.length > 1) {
+        const hasGt = conds.some(c => c.op === 'gt' || c.op === 'gte');
+        const hasLt = conds.some(c => c.op === 'lt' || c.op === 'lte');
+        if (hasGt && hasLt) {
+          const gtVal = Math.max(...conds.filter(c => c.op === 'gt' || c.op === 'gte').map(c => parseFloat(c.value)));
+          const ltVal = Math.min(...conds.filter(c => c.op === 'lt' || c.op === 'lte').map(c => parseFloat(c.value)));
+          if (gtVal >= ltVal) { addToast(`⚠️ Xung đột điều kiện: ${SENSOR_LABEL[sensor]} không thể vừa > ${gtVal} vừa < ${ltVal}!`, 'error'); return; }
+        }
+      }
+    }
     setSaving(true);
     try {
       await axios.post(`${API}/automation-rules`, {
         houseid: 'HS001', name: draft.name.trim(),
-        condition: { ...draft.condition, value: condValue },
+        /* CHANGE 5: gửi cả conditions (mảng) + condition (tương thích ngược = cond đầu tiên) */
+        conditions: draft.conditions.map(c => ({ ...c, value: parseFloat(c.value) })),
+        condition: { ...draft.conditions[0], value: parseFloat(draft.conditions[0].value) },
         actions: draft.actions.map(a => ({ numberdevice: parseInt(a.numberdevice), status: serializeStatus(a.numberdevice, a.status) })),
         enabled: draft.enabled,
       });
@@ -632,174 +1051,860 @@ function AutoRuleTab({ addToast }) {
     catch { addToast('Lỗi thay đổi trạng thái!', 'error'); }
   };
 
-  // Tập hợp ID thiết bị đã được dùng trong các hàng khác (để disable)
   const usedDeviceIds = (rowIndex) =>
-    new Set(draft.actions
-      .filter((_, j) => j !== rowIndex)
-      .map(a => parseInt(a.numberdevice))
-    );
+    new Set(draft.actions.filter((_, j) => j !== rowIndex).map(a => parseInt(a.numberdevice)));
 
   const setAction    = (i, field, val) => setDraft(prev => { const acts = [...prev.actions]; acts[i] = { ...acts[i], [field]: val }; return { ...prev, actions: acts }; });
-  const addAction    = () => {
+
+  /* CHANGE 5: thêm thiết bị qua Device Picker */
+  const addActionWithDevice = (deviceId) => {
     const used = new Set(draft.actions.map(a => parseInt(a.numberdevice)));
-    const next = DEVICE_OPTS.find(d => !used.has(d.id));
-    if (!next) { addToast('Tất cả thiết bị đã được thêm vào kịch bản!', 'info'); return; }
-    const defaultStatus = next.id >= 1 && next.id <= 5 ? true : 0;
-    setDraft(prev => ({ ...prev, actions: [...prev.actions, { numberdevice: next.id, status: defaultStatus }] }));
+    if (used.has(deviceId)) { addToast('Thiết bị này đã có trong kịch bản!', 'info'); return; }
+    const dev = DEVICE_OPTS.find(d => d.id === deviceId);
+    const defaultStatus = deviceId >= 1 && deviceId <= 5 ? true : 0;
+    setDraft(prev => ({ ...prev, actions: [...prev.actions, { numberdevice: deviceId, status: defaultStatus }] }));
+    setShowDevicePicker(false);
   };
   const removeAction = (i) => setDraft(prev => ({ ...prev, actions: prev.actions.filter((_, j) => j !== i) }));
 
+  /* CHANGE 5: thêm / xóa điều kiện */
+  const addCondition = () => {
+    const usedSensors = new Set(draft.conditions.map(c => c.sensor));
+    const nextSensor = SENSOR_OPTS.find(s => !usedSensors.has(s));
+    if (!nextSensor) { addToast('Đã thêm tất cả loại cảm biến!', 'info'); return; }
+    setDraft(prev => ({ ...prev, conditions: [...prev.conditions, { sensor: nextSensor, op: 'gt', value: 0 }] }));
+  };
+  const removeCondition = (i) => setDraft(prev => ({ ...prev, conditions: prev.conditions.filter((_, j) => j !== i) }));
+  const setCondition = (i, field, val) => setDraft(prev => {
+    const conds = [...prev.conditions];
+    conds[i] = { ...conds[i], [field]: val };
+    return { ...prev, conditions: conds };
+  });
+
+  /* CHANGE 5: nút +/- to cho giá trị điều kiện */
+  const CondStepBtn = ({ onClick, children }) => (
+    <button onClick={onClick} style={{
+      width: '34px', height: '34px', borderRadius: '9px', border: '1.5px solid rgba(0,209,255,0.4)',
+      background: 'linear-gradient(135deg, rgba(0,209,255,0.15) 0%, rgba(0,209,255,0.05) 100%)',
+      color: '#00D1FF', fontWeight: 900, fontSize: '1.15rem',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, transition: 'all 0.18s', lineHeight: 1,
+      boxShadow: '0 2px 8px rgba(0,209,255,0.2)',
+    }}
+    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,209,255,0.25)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+    onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,209,255,0.15) 0%, rgba(0,209,255,0.05) 100%)'; e.currentTarget.style.transform = 'scale(1)'; }}
+    >{children}</button>
+  );
+
+  /* CHANGE 5: nút +/- cho action */
+  const ActStepBtn = ({ color, onClick, children }) => (
+    <button onClick={onClick} style={{
+      width: '34px', height: '34px', borderRadius: '9px', border: `1.5px solid ${color}44`,
+      background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`,
+      color: color, fontWeight: 900, fontSize: '1.15rem',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, transition: 'all 0.18s', lineHeight: 1,
+    }}
+    onMouseEnter={e => { e.currentTarget.style.background = `${color}28`; e.currentTarget.style.transform = 'scale(1.1)'; }}
+    onMouseLeave={e => { e.currentTarget.style.background = `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`; e.currentTarget.style.transform = 'scale(1)'; }}
+    >{children}</button>
+  );
+
+  /* CHANGE 5: Device Picker modal/dropdown */
+  const DevicePickerModal = () => {
+    const usedIds = new Set(draft.actions.map(a => parseInt(a.numberdevice)));
+    const available = DEVICE_OPTS.filter(d => !usedIds.has(d.id));
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+        onClick={() => setShowDevicePicker(false)}>
+        <div style={{ background: 'var(--bg-card)', borderRadius: '18px', padding: '24px', minWidth: '300px', maxWidth: '380px', width: '90%', border: '1px solid rgba(16,185,129,0.3)', boxShadow: '0 8px 40px rgba(0,0,0,0.4), 0 0 60px rgba(16,185,129,0.08)' }}
+          onClick={e => e.stopPropagation()}>
+          <div style={{ fontWeight: 800, fontSize: '1rem', color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <BoltIconSVG size={18} color="#10b981" /> Chọn thiết bị
+          </div>
+          {available.length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0', fontSize: '0.88rem' }}>✅ Tất cả thiết bị đã được thêm</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {available.map(dev => (
+                <button key={dev.id} onClick={() => addActionWithDevice(dev.id)} style={{
+                  padding: '12px 16px', borderRadius: '12px', border: '1.5px solid rgba(16,185,129,0.25)',
+                  background: 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, transparent 100%)',
+                  color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.92rem', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left',
+                  transition: 'all 0.18s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.15)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.5)'; e.currentTarget.style.transform = 'translateX(4px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, transparent 100%)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.25)'; e.currentTarget.style.transform = 'translateX(0)'; }}
+                >
+                  <span style={{ fontSize: '1.3rem' }}>{dev.label.split(' ')[0]}</span>
+                  <span>{dev.label.slice(dev.label.indexOf(' ')+1)}</span>
+                  <span style={{ marginLeft: 'auto', color: '#10b981', fontSize: '0.78rem', fontWeight: 700 }}>+ Thêm</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => setShowDevicePicker(false)} style={{ marginTop: '16px', width: '100%', padding: '9px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Đóng</button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button onClick={openCreate} style={{
-          padding: '10px 22px', borderRadius: '11px',
-          background: 'linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(167,139,250,0.08) 100%)',
-          border: '1px solid rgba(167,139,250,0.4)', color: '#a78bfa', fontWeight: 700, fontSize: '0.88rem',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-          boxShadow: '0 0 16px rgba(167,139,250,0.15)', transition: 'all 0.2s',
-        }}>
+      {/* CHANGE 5: Device Picker modal */}
+      {showDevicePicker && <DevicePickerModal />}
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          marginBottom: "16px",
+        }}
+      >
+        <button
+          onClick={openCreate}
+          style={{
+            padding: "10px 22px",
+            borderRadius: "11px",
+            background:
+              "linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(167,139,250,0.08) 100%)",
+            border: "1px solid rgba(167,139,250,0.4)",
+            color: "#a78bfa",
+            fontWeight: 700,
+            fontSize: "0.88rem",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            boxShadow: "0 0 16px rgba(167,139,250,0.15)",
+            transition: "all 0.2s",
+          }}
+        >
           <BoltIconSVG size={18} color="#a78bfa" /> Tạo kịch bản mới
         </button>
       </div>
 
       {showForm && (
-        <Card style={{ border: '1px solid rgba(0,209,255,0.3)', boxShadow: '0 0 28px rgba(0,209,255,0.08)' }}>
+        <Card
+          style={{
+            border: "1px solid rgba(0,209,255,0.3)",
+            boxShadow: "0 0 28px rgba(0,209,255,0.08)",
+          }}
+        >
           <SectionTitle color="#00D1FF">
             <RadarIconSVG size={17} color="#00D1FF" />
-            {editName ? `Sửa: ${editName}` : 'Tạo kịch bản mới'}
+            {editName ? `Sửa: ${editName}` : "Tạo kịch bản mới"}
           </SectionTitle>
 
           <InputRow label="Tên kịch bản">
-            <input style={{ ...inputStyle, flex: 1 }} placeholder="VD: Bật quạt khi nóng"
-              value={draft.name} onChange={e => setDraft(p => ({ ...p, name: e.target.value }))} />
+            <input
+              style={{ ...inputStyle, flex: 1 }}
+              placeholder="VD: Bật quạt khi nóng"
+              value={draft.name}
+              onChange={(e) =>
+                setDraft((p) => ({ ...p, name: e.target.value }))
+              }
+            />
           </InputRow>
 
-          <div style={{ background: 'linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid rgba(0,209,255,0.15)' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#00D1FF', marginBottom: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '3px', height: '14px', background: '#00D1FF', borderRadius: '2px', boxShadow: '0 0 6px #00D1FF88', display: 'inline-block' }} />
-              <RadarIconSVG size={14} color="#00D1FF" /> Điều kiện kích hoạt
+          {/* CHANGE 5: Multi-conditions block */}
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)",
+              borderRadius: "12px",
+              padding: "16px",
+              marginBottom: "16px",
+              border: "1px solid rgba(0,209,255,0.15)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  color: "#00D1FF",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "3px",
+                    height: "14px",
+                    background: "#00D1FF",
+                    borderRadius: "2px",
+                    boxShadow: "0 0 6px #00D1FF88",
+                    display: "inline-block",
+                  }}
+                />
+                <RadarIconSVG size={14} color="#00D1FF" /> Điều kiện kích hoạt
+              </div>
+              {/* CHANGE 5: nút thêm điều kiện */}
+              {draft.conditions.length < 3 && (
+                <button
+                  onClick={addCondition}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "8px",
+                    border: "1.5px solid rgba(0,209,255,0.4)",
+                    background: "rgba(0,209,255,0.1)",
+                    color: "#00D1FF",
+                    fontWeight: 700,
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  + Thêm điều kiện
+                </button>
+              )}
             </div>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Nếu</span>
-              <select style={selectStyle} value={draft.condition.sensor} onChange={e => setDraft(p => ({ ...p, condition: { ...p.condition, sensor: e.target.value } }))}>
-                {SENSOR_OPTS.map(s => <option key={s} value={s}>{SENSOR_LABEL[s]}</option>)}
-              </select>
-              <select style={selectStyle} value={draft.condition.op} onChange={e => setDraft(p => ({ ...p, condition: { ...p.condition, op: e.target.value } }))}>
-                {OP_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <input type="number" style={{ ...inputStyle, width: '90px' }} value={draft.condition.value}
-                onChange={e => setDraft(p => ({ ...p, condition: { ...p.condition, value: e.target.value } }))} />
-            </div>
+
+            {draft.conditions.map((cond, ci) => (
+              <div
+                key={ci}
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  marginBottom: ci < draft.conditions.length - 1 ? "10px" : 0,
+                  padding: "10px",
+                  background: "rgba(0,209,255,0.04)",
+                  borderRadius: "10px",
+                  border: "1px solid rgba(0,209,255,0.1)",
+                }}
+              >
+                {ci > 0 && (
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      color: "#00D1FF",
+                      background: "rgba(0,209,255,0.18)",
+                      border: "1px solid rgba(0,209,255,0.3)",
+                      borderRadius: "5px",
+                      padding: "2px 7px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    VÀ
+                  </span>
+                )}
+                <span
+                  style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}
+                >
+                  Nếu
+                </span>
+                {/* CHANGE 5: chỉ hiển thị sensor chưa được chọn ở điều kiện khác */}
+                <select
+                  style={selectStyle}
+                  value={cond.sensor}
+                  onChange={(e) => setCondition(ci, "sensor", e.target.value)}
+                >
+                  {SENSOR_OPTS.map((s) => {
+                    const usedByOther = draft.conditions.some(
+                      (c, j) => j !== ci && c.sensor === s,
+                    );
+                    return (
+                      <option key={s} value={s} disabled={usedByOther}>
+                        {SENSOR_LABEL[s]}
+                        {usedByOther ? " (đã dùng)" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <select
+                  style={selectStyle}
+                  value={cond.op}
+                  onChange={(e) => setCondition(ci, "op", e.target.value)}
+                >
+                  {OP_OPTS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                {/* CHANGE 5: nút +/- cho giá trị điều kiện */}
+                <CondStepBtn
+                  onClick={() =>
+                    setCondition(
+                      ci,
+                      "value",
+                      Math.round((parseFloat(cond.value || 0) - 1) * 10) / 10,
+                    )
+                  }
+                >
+                  −
+                </CondStepBtn>
+                <input
+                  type="number"
+                  style={{
+                    ...inputStyle,
+                    width: "80px",
+                    textAlign: "center",
+                    fontWeight: 700,
+                  }}
+                  value={cond.value}
+                  onChange={(e) => setCondition(ci, "value", e.target.value)}
+                />
+                <CondStepBtn
+                  onClick={() =>
+                    setCondition(
+                      ci,
+                      "value",
+                      Math.round((parseFloat(cond.value || 0) + 1) * 10) / 10,
+                    )
+                  }
+                >
+                  +
+                </CondStepBtn>
+                {draft.conditions.length > 1 && (
+                  <button
+                    onClick={() => removeCondition(ci)}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid rgba(234,67,53,0.3)",
+                      background: "rgba(234,67,53,0.08)",
+                      color: "var(--accent-red)",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
-          <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, var(--bg-card-inner) 100%)', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid rgba(16,185,129,0.15)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#10b981', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '3px', height: '14px', background: '#10b981', borderRadius: '2px', boxShadow: '0 0 6px #10b98188', display: 'inline-block' }} />
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(16,185,129,0.06) 0%, var(--bg-card-inner) 100%)",
+              borderRadius: "12px",
+              padding: "16px",
+              marginBottom: "16px",
+              border: "1px solid rgba(16,185,129,0.15)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  color: "#10b981",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "3px",
+                    height: "14px",
+                    background: "#10b981",
+                    borderRadius: "2px",
+                    boxShadow: "0 0 6px #10b98188",
+                    display: "inline-block",
+                  }}
+                />
                 <BoltIconSVG size={14} color="#10b981" /> Hành động phản hồi
               </span>
-              <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={addAction}>+ Thêm</button>
+              {/* CHANGE 5: nút thêm thiết bị mở Device Picker */}
+              <button
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: "9px",
+                  background:
+                    "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.08) 100%)",
+                  border: "1.5px solid rgba(16,185,129,0.4)",
+                  color: "#10b981",
+                  fontWeight: 700,
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  transition: "all 0.18s",
+                  boxShadow: "0 2px 10px rgba(16,185,129,0.18)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(16,185,129,0.25)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background =
+                    "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.08) 100%)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+                onClick={() => setShowDevicePicker(true)}
+              >
+                + Thêm thiết bị
+              </button>
             </div>
 
-            {draft.actions.map((act, i) => {
-              const devId   = parseInt(act.numberdevice);
-              const isLight = devId >= 1 && devId <= 5;
-              const isServo = devId === 6;
-              const isFan   = devId === 7;
-              const used = usedDeviceIds(i);
+            {draft.actions.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "20px",
+                  border: "1px dashed rgba(16,185,129,0.2)",
+                  borderRadius: "10px",
+                  background: "rgba(16,185,129,0.02)",
+                }}
+              >
+                <p
+                  style={{
+                    color: "var(--text-secondary)",
+                    fontSize: "0.85rem",
+                    margin: 0,
+                  }}
+                >
+                  Chưa có thiết bị nào. Nhấn <b>"+ Thêm thiết bị"</b> để
+                  chọn.
+                </p>
+              </div>
+            ) : (
+              /* Nếu đã có thiết bị thì render danh sách như cũ */
+              draft.actions.map((act, i) => {
+                const devId = parseInt(act.numberdevice);
+                const isLight = devId >= 1 && devId <= 5;
+                const isServo = devId === 6;
+                const isFan = devId === 7;
+                const dev = DEVICE_OPTS.find((d) => d.id === devId);
+                const devColor = isLight
+                  ? "#FFC107"
+                  : isServo
+                    ? "#00D1FF"
+                    : "#a78bfa";
 
-              return (
-                <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', padding: '8px 10px' }}>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>→ Thiết bị</span>
-                  <select style={selectStyle} value={act.numberdevice}
-                    onChange={e => {
-                      const newId = parseInt(e.target.value);
-                      setAction(i, 'numberdevice', e.target.value);
-                      setAction(i, 'status', newId >= 1 && newId <= 5 ? true : 0);
-                    }}>
-                    {DEVICE_OPTS.map(d => (
-                      <option key={d.id} value={d.id} disabled={used.has(d.id)}>
-                        {used.has(d.id) ? `${d.label} (đã dùng)` : d.label}
-                      </option>
-                    ))}
-                  </select>
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                      marginBottom: "10px",
+                      flexWrap: "wrap",
+                      background: `linear-gradient(135deg, ${devColor}08 0%, rgba(255,255,255,0.01) 100%)`,
+                      borderRadius: "10px",
+                      padding: "10px 12px",
+                      border: `1px solid ${devColor}20`,
+                    }}
+                  >
+                    <span style={{ fontSize: "1.1rem" }}>
+                      {dev?.label.split(" ")[0]}
+                    </span>
+                    <span
+                      style={{
+                        color: "var(--text-primary)",
+                        fontWeight: 600,
+                        fontSize: "0.88rem",
+                      }}
+                    >
+                      {dev?.label.slice(dev.label.indexOf(" ") + 1)}
+                    </span>
+                    <span
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.85rem",
+                        marginLeft: "4px",
+                      }}
+                    >
+                      →
+                    </span>
 
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Trạng thái</span>
-                  {isLight && <select style={{ ...selectStyle, width: '130px' }} value={String(act.status)} onChange={e => setAction(i, 'status', e.target.value === 'true')}><option value="true">✅ Bật</option><option value="false">⭕ Tắt</option></select>}
-                  {isServo && <select style={{ ...selectStyle, width: '130px' }} value={String(act.status)} onChange={e => setAction(i, 'status', parseFloat(e.target.value))}><option value="90">🔓 Mở (90°)</option><option value="0">🔒 Đóng (0°)</option></select>}
-                  {isFan   && <select style={{ ...selectStyle, width: '130px' }} value={act.status} onChange={e => setAction(i, 'status', parseFloat(e.target.value))}>{FAN_LEVELS.map(l => <option key={l} value={l}>Mức {l}%</option>)}</select>}
-                  {draft.actions.length > 1 && <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => removeAction(i)}>✕</button>}
-                </div>
-              );
-            })}
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-              💡 Mỗi thiết bị chỉ được chọn một lần để tránh xung đột
-            </p>
+                    {/* Tận dụng StatusPicker mới nếu bạn đã thêm ở bước trước */}
+                    {isLight && (
+                      <StatusPicker
+                        value={act.status}
+                        onChange={(val) => setAction(i, "status", val)}
+                      />
+                    )}
+
+                    {isServo && (
+                      <select
+                        style={{ ...selectStyle, width: "130px" }}
+                        value={String(act.status)}
+                        onChange={(e) =>
+                          setAction(i, "status", parseFloat(e.target.value))
+                        }
+                      >
+                        <option value="90">🔓 Mở (90°)</option>
+                        <option value="0">🔒 Đóng (0°)</option>
+                      </select>
+                    )}
+
+                    {isFan && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <ActStepBtn
+                          color="#a78bfa"
+                          onClick={() => {
+                            /* logic giảm mức quạt */
+                          }}
+                        >
+                          −
+                        </ActStepBtn>
+                        <select
+                          style={{ ...selectStyle, width: "110px" }}
+                          value={act.status}
+                          onChange={(e) =>
+                            setAction(i, "status", parseFloat(e.target.value))
+                          }
+                        >
+                          {FAN_LEVELS.map((l) => (
+                            <option key={l} value={l}>
+                              Mức {l}%
+                            </option>
+                          ))}
+                        </select>
+                        <ActStepBtn
+                          color="#a78bfa"
+                          onClick={() => {
+                            /* logic tăng mức quạt */
+                          }}
+                        >
+                          +
+                        </ActStepBtn>
+                      </div>
+                    )}
+
+                    {/* Nút xóa thiết bị này khỏi kịch bản */}
+                    <button
+                      style={{
+                        marginLeft: "auto",
+                        padding: "5px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(234,67,53,0.3)",
+                        background: "rgba(234,67,53,0.08)",
+                        color: "var(--accent-red)",
+                        fontWeight: 700,
+                        fontSize: "0.82rem",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => removeAction(i)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <InputRow label="Kích hoạt">
             <label className="toggle-switch">
-              <input type="checkbox" checked={draft.enabled} onChange={e => setDraft(p => ({ ...p, enabled: e.target.checked }))} />
+              <input
+                type="checkbox"
+                checked={draft.enabled}
+                onChange={(e) =>
+                  setDraft((p) => ({ ...p, enabled: e.target.checked }))
+                }
+              />
               <span className="slider"></span>
             </label>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{draft.enabled ? 'Bật ngay' : 'Tạm tắt'}</span>
+            <span
+              style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}
+            >
+              {draft.enabled ? "Bật ngay" : "Tạm tắt"}
+            </span>
           </InputRow>
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
-            <button className="btn btn-danger" onClick={() => setShowForm(false)}>Hủy</button>
-            <button className="btn btn-success" disabled={saving} onClick={handleSave}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              justifyContent: "flex-end",
+              marginTop: "16px",
+            }}
+          >
+            <button
+              className="btn btn-danger"
+              onClick={() => setShowForm(false)}
+            >
+              Hủy
+            </button>
+            <button
+              className="btn btn-success"
+              disabled={saving}
+              onClick={handleSave}
+            >
+              {saving ? "Lưu..." : "Lưu"}
+            </button>
           </div>
         </Card>
       )}
 
       {rules.length === 0 && !showForm && (
         <Card>
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '30px' }}>
+          <p
+            style={{
+              color: "var(--text-secondary)",
+              textAlign: "center",
+              padding: "30px",
+            }}
+          >
             Chưa có kịch bản nào. Nhấn "Tạo kịch bản mới" để bắt đầu.
           </p>
         </Card>
       )}
 
-      {rules.map(rule => {
-        const cond    = rule.condition;
-        const opLabel = OP_OPTS.find(o => o.value === cond?.op)?.label || cond?.op;
-        const sColor  = { temp: '#FF9F43', humi: '#00D1FF', light: '#FFC107' }[cond?.sensor] || 'var(--accent-blue)';
-        const SIcon   = SENSOR_ICON_MAP[cond?.sensor];
+      {rules.map((rule) => {
+        /* CHANGE 5: hiển thị tất cả conditions, fallback về condition đơn */
+        const conds =
+          rule.conditions || (rule.condition ? [rule.condition] : []);
+        const firstCond = conds[0] || {};
+        const sColor =
+          { temp: "#FF9F43", humi: "#00D1FF", light: "#FFC107" }[
+            firstCond?.sensor
+          ] || "var(--accent-blue)";
+        const SIcon = SENSOR_ICON_MAP[firstCond?.sensor];
         const actionList = rule.actions || rule.action || [];
+        // ACTIVE-RULE HIGHLIGHT: kịch bản đang thực sự chạy trên phần cứng
+        const isRunning = !!rule.is_active_now;
         return (
-          <Card key={rule._id} style={{
-            borderLeft: `3px solid ${rule.enabled ? sColor : 'var(--border-color)'}`,
-            boxShadow: rule.enabled ? `0 2px 20px ${sColor}14, 0 2px 16px rgba(0,0,0,0.14)` : undefined,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+          <Card
+            key={rule._id}
+            style={{
+              borderLeft: `${isRunning ? "4px" : "3px"} solid ${isRunning ? sColor : rule.enabled ? sColor : "var(--border-color)"}`,
+              boxShadow: isRunning
+                ? `0 0 0 1.5px ${sColor}55, 0 4px 28px ${sColor}40, 0 2px 16px rgba(0,0,0,0.18)`
+                : rule.enabled
+                  ? `0 2px 20px ${sColor}14, 0 2px 16px rgba(0,0,0,0.14)`
+                  : undefined,
+              background: isRunning
+                ? `linear-gradient(135deg, ${sColor}0d 0%, rgba(0,0,0,0) 60%)`
+                : undefined,
+              opacity: rule.enabled ? 1 : 0.55,
+              transition: "all 0.4s ease",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                  {SIcon && <SIcon size={28} />}
-                  <span style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)' }}>{rule.name}</span>
-                  <StatusBadge ok={rule.enabled} label={rule.enabled ? 'Đang bật' : 'Tắt'} />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    marginBottom: "10px",
+                  }}
+                >
+                  {SIcon && <SIcon size={isRunning ? 34 : 28} />}
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      fontSize: isRunning ? "1.05rem" : "0.98rem",
+                      color: isRunning ? sColor : "var(--text-primary)",
+                      transition: "all 0.3s ease",
+                    }}
+                  >
+                    {rule.name}
+                  </span>
+                  <StatusBadge
+                    ok={rule.enabled}
+                    label={rule.enabled ? "Đang bật" : "Tắt"}
+                  />
+                  {isRunning && (
+                    <span style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontSize: "0.72rem",
+                      fontWeight: 800,
+                      color: sColor,
+                      background: `${sColor}20`,
+                      border: `1px solid ${sColor}55`,
+                      borderRadius: "20px",
+                      padding: "2px 10px",
+                      letterSpacing: "0.04em",
+                      animation: "boltFlicker 1.6s ease-in-out infinite",
+                    }}>
+                      ⚡ ĐANG CHẠY
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontSize: '0.83rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Nếu</span>
-                  <span style={{ background: `${sColor}18`, color: sColor, border: `1px solid ${sColor}44`, borderRadius: '6px', padding: '2px 8px', fontWeight: 700, fontSize: '0.8rem' }}>{SENSOR_LABEL[cond?.sensor]}</span>
-                  <span style={{ background: 'rgba(0,209,255,0.1)', color: '#00D1FF', border: '1px solid rgba(0,209,255,0.3)', borderRadius: '6px', padding: '2px 8px', fontWeight: 700, fontSize: '0.8rem' }}>{opLabel}</span>
-                  <span style={{ background: 'rgba(255,159,67,0.1)', color: '#FF9F43', border: '1px solid rgba(255,159,67,0.3)', borderRadius: '6px', padding: '2px 8px', fontWeight: 700, fontSize: '0.8rem' }}>{cond?.value}</span>
+                {/* CHANGE 5: hiển thị nhiều điều kiện */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px",
+                    marginBottom: "6px",
+                  }}
+                >
+                  {conds.map((cond, ci) => {
+                    const opLabel =
+                      OP_OPTS.find((o) => o.value === cond?.op)?.label ||
+                      cond?.op;
+                    const cColor =
+                      { temp: "#FF9F43", humi: "#00D1FF", light: "#FFC107" }[
+                        cond?.sensor
+                      ] || "var(--accent-blue)";
+                    return (
+                      <div
+                        key={ci}
+                        style={{
+                          fontSize: "0.83rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {ci > 0 && (
+                          <span
+                            style={{
+                              fontSize: "0.68rem",
+                              fontWeight: 800,
+                              color: "#00D1FF",
+                              background: "rgba(0,209,255,0.15)",
+                              border: "1px solid rgba(0,209,255,0.3)",
+                              borderRadius: "4px",
+                              padding: "1px 5px",
+                            }}
+                          >
+                            VÀ
+                          </span>
+                        )}
+                        <span style={{ color: "var(--text-secondary)" }}>
+                          Nếu
+                        </span>
+                        <span
+                          style={{
+                            background: `${cColor}18`,
+                            color: cColor,
+                            border: `1px solid ${cColor}44`,
+                            borderRadius: "6px",
+                            padding: "2px 8px",
+                            fontWeight: 700,
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          {SENSOR_LABEL[cond?.sensor]}
+                        </span>
+                        <span
+                          style={{
+                            background: "rgba(0,209,255,0.1)",
+                            color: "#00D1FF",
+                            border: "1px solid rgba(0,209,255,0.3)",
+                            borderRadius: "6px",
+                            padding: "2px 8px",
+                            fontWeight: 700,
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          {opLabel}
+                        </span>
+                        <span
+                          style={{
+                            background: "rgba(255,159,67,0.1)",
+                            color: "#FF9F43",
+                            border: "1px solid rgba(255,159,67,0.3)",
+                            borderRadius: "6px",
+                            padding: "2px 8px",
+                            fontWeight: 700,
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          {cond?.value}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div
+                  style={{
+                    fontSize: "0.83rem",
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
                   <BoltIconSVG size={14} color="#10b981" />
-                  {actionList.map(a => {
-                    const devLabel = DEVICE_OPTS.find(d => d.id === parseInt(a.numberdevice))?.label || `Thiết bị ${a.numberdevice}`;
-                    return `${devLabel} → ${fmtDeviceVal(a.status)}`;
-                  }).join('  ·  ')}
+                  {actionList
+                    .map((a) => {
+                      const devLabel =
+                        DEVICE_OPTS.find(
+                          (d) => d.id === parseInt(a.numberdevice),
+                        )?.label || `Thiết bị ${a.numberdevice}`;
+                      return `${devLabel} → ${fmtDeviceVal(a.status)}`;
+                    })
+                    .join("  ·  ")}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "center",
+                  flexShrink: 0,
+                }}
+              >
                 <label className="toggle-switch">
-                  <input type="checkbox" checked={rule.enabled} onChange={() => handleToggle(rule)} />
+                  <input
+                    type="checkbox"
+                    checked={rule.enabled}
+                    onChange={() => handleToggle(rule)}
+                  />
                   <span className="slider"></span>
                 </label>
-                <button className="btn btn-primary" style={{ padding: '6px 14px', borderRadius: '9px' }} onClick={() => openEdit(rule)}>Sửa</button>
-                <button className="btn btn-danger" style={{ padding: '6px 12px', borderRadius: '9px' }} onClick={() => handleDelete(rule.name)}>🗑</button>
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: "6px 14px", borderRadius: "9px" }}
+                  onClick={() => openEdit(rule)}
+                >
+                  Sửa
+                </button>
+                <button
+                  className="btn btn-danger"
+                  style={{ padding: "6px 12px", borderRadius: "9px" }}
+                  onClick={() => handleDelete(rule.name)}
+                >
+                  🗑
+                </button>
               </div>
             </div>
           </Card>
