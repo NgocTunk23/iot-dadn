@@ -22,6 +22,16 @@ def init_module1(analytics):
 def update_latest_sensor_data(payload):
     """Cập nhật dữ liệu cảm biến mới nhất (gọi từ server.py)"""
     global latest_sensor_data
+    
+    # Chuẩn hóa dữ liệu Servo (ID 6) trong payload trước khi lưu
+    if "numberdevices" in payload:
+        for dev in payload["numberdevices"]:
+            if dev.get("numberdevice") == 6:
+                try:
+                    dev["status"] = 90 if int(dev.get("status", 0)) >= 45 else 0
+                except (ValueError, TypeError):
+                    dev["status"] = 0
+                    
     latest_sensor_data = payload
 
 def update_sensor_connection(now_vn):

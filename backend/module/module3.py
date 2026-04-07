@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api")
 
 # Biến toàn cục cho thiết bị (được chia sẻ với server.py)
 # 7 thiết bị: Đèn 1-5, Servo 6, Quạt 7
-device_status = [[1, False], [2, False], [3, False], [4, False], [5, False], [6, 0], [7, 0]]
+device_status = [[1, False], [2, False], [3, False], [4, False], [6, 0], [7, 0]]
 
 _scene_manager = None
 
@@ -70,6 +70,12 @@ def apply_scene_to_status(current_status, actions):
         dev_id = act.get("device_id", act.get("numberdevice"))
         val = act.get("value", act.get("status"))
         if dev_id is not None and val is not None:
+            # Chuẩn hóa Servo (ID 6) về 0/90 để đảm bảo tính nhất quán
+            if dev_id == 6:
+                try:
+                    val = 90 if int(val) >= 45 else 0
+                except (ValueError, TypeError):
+                    val = 0
             status_dict[dev_id] = val
             
     new_status = [[k, v] for k, v in status_dict.items()]
