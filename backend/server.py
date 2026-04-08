@@ -23,6 +23,7 @@ from module.module3 import (
 )
 import module.module3 as module3
 from module.module1 import DashboardAnalytics, init_module1, router as module1_router
+from module.module4 import init_module4, router as module4_router
 
 app = FastAPI()
 
@@ -41,6 +42,7 @@ db = client.iot_database
 collection = db.Sensor_history
 danger_collection = db.Danger_log  # Bảng log nguy hiểm
 device_log_collection = db.Device_log  # Bảng log thiết bị
+system_update_collection = db.System_update_log  # Bảng log cập nhật hệ thống
 scenes_collection = db.Mode  # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
 init_module3(scene_manager)
@@ -53,6 +55,13 @@ channel_mgr = NotificationChannelManager(notif_channel_collection, house_col)
 rule_mgr = AutomationRuleManager(automation_rules_col)
 alert_dispatcher = AlertDispatcher(danger_collection, notif_channel_collection)
 
+init_module4(
+    collection,
+    danger_collection,
+    device_log_collection,
+    system_update_collection,
+    threshold_mgr=threshold_mgr,
+)
 
 # Biến toàn cục từ module được chia sẻ
 # Biến phụ để so sánh sự thay đổi log
@@ -148,12 +157,15 @@ async def handle_data(payload: dict = Body(...)):
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
                 dev_id_in_db = f"{timestamp_str}{dev_num}"
 
+                old_status = last_device_status.get(dev_num)
+
                 device_log = {
                     "_id": dev_id_in_db,
                     "time": common_time,
                     "houseid": house_id,
                     "numberdevice": dev_num,
-                    "status": stat,
+                    "old_status": old_status,
+                    "new_status": stat,
                     "reason": reason_str,
                 }
 
@@ -213,6 +225,8 @@ app.include_router(module3_router)
 dashboard_analytics = DashboardAnalytics(collection, danger_collection)
 init_module1(dashboard_analytics)
 app.include_router(module1_router)
+
+app.include_router(module4_router)
 
 
 @app.on_event("startup")

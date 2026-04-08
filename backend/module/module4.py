@@ -1,211 +1,255 @@
-from datetime import datetime, timezone, timedelta
-from collections import defaultdict
+from fastapi import APIRouter, Query, Request
+from datetime import datetime
 
-LOG_LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
+router = APIRouter(prefix="/api/logging", tags=["Module 4"])
+
+sensor_collection = None
+danger_collection = None
+device_collection = None
+system_collection = None
+_threshold_mgr = None  # ← Tham chiếu tới ThresholdManager của module2
+
+DEFAULT_THRESHOLDS = {
+    "temp": {"min": 0, "max": 40},
+    "humi": {"min": 20, "max": 80},
+    "light": {"min": 0, "max": 90},
+}
 
 
-class LogManager:
-    def __init__(self, logs_collection, config_collection):
-        self.logs_collection = logs_collection
-        self.config_collection = config_collection
-        self.tz_vn = timezone(timedelta(hours=7))
+# =============================
+# INIT MODULE
+# =============================
+def init_module4(
+    sensor_col, danger_col, device_col, system_col=None, threshold_mgr=None
+):
+    global sensor_collection, danger_collection, device_collection
+    global system_collection, _threshold_mgr
 
-    # =========================
-    # HELPER
-    # =========================
-    async def _get_current_log_level(self) -> str:
-        config = await self.config_collection.find_one({"type": "logging"})
-        return config.get("level", "INFO") if config else "INFO"
+    sensor_collection = sensor_col
+    danger_collection = danger_col
+    device_collection = device_col
+    system_collection = system_col
+    _threshold_mgr = threshold_mgr  # ← Nhận ThresholdManager từ module2
 
-    # =========================
-    # UC004.6 - GHI LOG
-    # =========================
-    async def log_event(self, device_id, level: str, message: str, value=None):
-        current_level = await self._get_current_log_level()
 
-        if LOG_LEVEL_ORDER.get(level, 1) < LOG_LEVEL_ORDER.get(current_level, 1):
-            return {"status": "skipped"}
+# =============================
+# FORMAT TIME
+# =============================
+def format_time(t):
+    if isinstance(t, datetime):
+        return t.strftime("%Y-%m-%d %H:%M:%S")
+    return t
 
-        log_data = {
-            "device_id": str(device_id),
-            "level": level,
-            "message": message,
-            "value": value,
-            "timestamp": datetime.now(self.tz_vn),  # ✅ luôn là datetime
-        }
 
-        await self.logs_collection.insert_one(log_data)
-        return {"status": "success"}
+# =============================
+# SENSOR STATUS LOGIC — dùng ngưỡng động từ module2
+# =============================
+def get_sensor_status(temp, humi, light, thresholds: dict) -> str:
+    """
+    Dùng ngưỡng max từ ThresholdManager thay vì hardcode.
+    Nếu bất kỳ cảm biến nào vượt max → trạng thái tương ứng.
+    """
+    t_max = thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40)
+    h_max = thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80)
+    l_max = thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90)
 
-    # =========================
-    # UC004.2 - LOG LEVEL
-    # =========================
-    async def set_log_level(self, level: str):
-        if level not in LOG_LEVEL_ORDER:
-            return {"status": "error", "message": "Invalid level"}
+    # Mức nguy hiểm: vượt ngưỡng max 10%
+    if temp > t_max * 1.1 or humi > h_max * 1.1 or light > l_max * 1.1:
+        return "Nguy hiểm"
 
-        await self.config_collection.update_one(
-            {"type": "logging"},
-            {"$set": {"level": level, "updated_at": datetime.now(self.tz_vn)}},
-            upsert=True,
-        )
-        return {"status": "success", "log_level": level}
+    # Mức cảnh báo: vượt ngưỡng max
+    if temp > t_max or humi > h_max or light > l_max:
+        return "Cảnh báo"
 
-    # =========================
-    # UC004.1 - STRATEGY
-    # =========================
-    async def set_strategy(self, strategy: str):
-        valid = {"frequency", "average", "trend"}
-        if strategy not in valid:
-            return {"status": "error", "message": "Invalid strategy"}
+    return "Bình thường"
 
-        await self.config_collection.update_one(
-            {"type": "analysis"},
-            {"$set": {"strategy": strategy, "updated_at": datetime.now(self.tz_vn)}},
-            upsert=True,
-        )
-        return {"status": "success", "strategy": strategy}
 
-    # =========================
-    # UC004.5 - GET LOGS
-    # =========================
-    async def get_logs(self, level=None, device_id=None, limit=100):
-        query = {}
-        if level:
-            query["level"] = level
-        if device_id:
-            query["device_id"] = str(device_id)
+# =============================
+# DEVICE MAP
+# =============================
+DEVICE_MAP = {
+    1: "Đèn 1 (PIR)",
+    2: "Đèn 2",
+    3: "Đèn 3",
+    4: "Đèn 4",
+    5: "Đèn 5",
+    6: "Servo (Cửa)",
+    7: "Quạt",
+}
 
-        cursor = self.logs_collection.find(query).sort("timestamp", -1).limit(limit)
 
-        logs = []
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
+# =============================
+# 1. DANGER HISTORY
+# =============================
+@router.get("/danger-history")
+async def get_danger_history(
+    request: Request,
+    houseid: str = "HS001",
+    limit: int = Query(20),
+):
+    if danger_collection is None:
+        return []
 
-            # ✅ chỉ format khi trả API
-            if isinstance(doc.get("timestamp"), datetime):
-                doc["timestamp"] = (
-                    doc["timestamp"]
-                    .astimezone(self.tz_vn)
-                    .strftime("%Y-%m-%d %H:%M:%S")
+    # Lấy ngưỡng thực từ module2
+    thresholds = DEFAULT_THRESHOLDS
+    mgr = getattr(request.app.state, "threshold_mgr", _threshold_mgr)
+    if mgr:
+        try:
+            thresholds = await mgr.get_thresholds(houseid)
+        except Exception:
+            pass
+
+    t_max = thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40)
+    h_max = thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80)
+    l_max = thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90)
+
+    SENSOR_THRESHOLD_LABEL = {
+        "temp": f"≤ {t_max}°C",
+        "humi": f"≤ {h_max}%",
+        "light": f"≤ {l_max}%",
+    }
+    SENSOR_UNIT = {"temp": "°C", "humi": "%", "light": "%"}
+
+    cursor = danger_collection.find({"houseid": houseid}).sort("time", -1).limit(limit)
+
+    result = []
+    async for doc in cursor:
+        violations = doc.get("violations", [])
+
+        if violations:
+            # Mỗi violation tạo 1 dòng riêng
+            for v in violations:
+                sensor = v.get("sensor", "Không rõ")
+                actual_val = v.get("value", "--")
+                unit = SENSOR_UNIT.get(sensor, "")
+                threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
+
+                result.append(
+                    {
+                        "time": format_time(doc.get("time")),
+                        "sensor": sensor,
+                        "threshold": threshold_label,
+                        "actual": f"{actual_val}{unit}",
+                        "level": (
+                            "Nguy hiểm"
+                            if v.get("value", 0)
+                            > thresholds.get(
+                                sensor, DEFAULT_THRESHOLDS.get(sensor, {})
+                            ).get("max", 100)
+                            * 1.1
+                            else "Cảnh báo"
+                        ),
+                    }
                 )
-
-            logs.append(doc)
-
-        return logs
-
-    # =========================
-    # UC004.3 + UC004.4 - REPORT
-    # =========================
-    async def get_report(self, period="day"):
-        now = datetime.now(self.tz_vn)
-
-        if period == "week":
-            from_time = now - timedelta(days=7)
-        elif period == "month":
-            from_time = now - timedelta(days=30)
         else:
-            from_time = now - timedelta(days=1)
+            # Fallback: doc cũ không có violations
+            result.append(
+                {
+                    "time": format_time(doc.get("time")),
+                    "sensor": doc.get("sensor", "Không rõ"),
+                    "threshold": doc.get("threshold", "--"),
+                    "actual": doc.get("actual", "--"),
+                    "level": doc.get("level", "Cảnh báo"),
+                }
+            )
 
-        cursor = self.logs_collection.find({"timestamp": {"$gte": from_time}}).sort(
-            "timestamp", 1
+    return result
+
+
+# =============================
+# 2. SENSOR HISTORY
+# =============================
+@router.get("/sensor-history")
+async def get_sensor_history(
+    request: Request,
+    houseid: str = "HS001",
+    limit: int = Query(20),
+):
+    if sensor_collection is None:
+        return []
+
+    # Lấy ngưỡng thực từ module2
+    thresholds = DEFAULT_THRESHOLDS
+    mgr = getattr(request.app.state, "threshold_mgr", _threshold_mgr)
+    if mgr:
+        try:
+            thresholds = await mgr.get_thresholds(houseid)
+        except Exception:
+            pass
+
+    cursor = sensor_collection.find().sort("time", -1).limit(limit)
+
+    result = []
+    async for doc in cursor:
+        temp = doc.get("temp", 0)
+        humi = doc.get("humi", 0)
+        light = doc.get("light", 0)
+
+        # ← Dùng ngưỡng động thay vì hardcode
+        status = get_sensor_status(temp, humi, light, thresholds)
+
+        result.append(
+            {
+                "time": format_time(doc.get("time")),
+                "temp": temp,
+                "humi": humi,
+                "light": light,
+                "status": status,
+            }
         )
 
-        logs = []
-        async for doc in cursor:
-            logs.append(doc)
-
-        config = await self.config_collection.find_one({"type": "analysis"})
-        strategy = config.get("strategy", "frequency") if config else "frequency"
-
-        analysis = analyze_logs(logs, strategy, period)
-
-        return {
-            "period": period,
-            "from": from_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "to": now.strftime("%Y-%m-%d %H:%M:%S"),
-            "total_logs": len(logs),
-            "strategy": analysis.get("strategy"),
-            "data": analysis.get("data"),
-        }
-
-    # =========================
-    # GET CONFIG
-    # =========================
-    async def get_config(self):
-        logging_cfg = await self.config_collection.find_one({"type": "logging"})
-        analysis_cfg = await self.config_collection.find_one({"type": "analysis"})
-
-        return {
-            "log_level": logging_cfg.get("level", "INFO") if logging_cfg else "INFO",
-            "strategy": (
-                analysis_cfg.get("strategy", "frequency")
-                if analysis_cfg
-                else "frequency"
-            ),
-        }
+    return result
 
 
-# =========================
-# CORE ANALYSIS ENGINE
-# =========================
-def analyze_logs(logs: list, strategy: str, period: str = "day") -> dict:
+# =============================
+# 3. DEVICE HISTORY
+# =============================
+@router.get("/device-history")
+async def get_device_history(limit: int = Query(20)):
+    if device_collection is None:
+        return []
 
-    if strategy == "frequency":
-        result = defaultdict(int)
-        for log in logs:
-            level = log.get("level", "UNKNOWN")
-            result[level] += 1
-        return {"strategy": strategy, "data": dict(result)}
+    cursor = device_collection.find().sort("time", -1).limit(limit)
 
-    elif strategy == "average":
-        sum_val = defaultdict(float)
-        count = defaultdict(int)
+    result = []
+    async for doc in cursor:
+        device_num = doc.get("numberdevice")
+        old_status = doc.get("old_status", False)
+        new_status = doc.get("new_status", False)
+        reason = doc.get("reason", "")
 
-        for log in logs:
-            dev = str(log.get("device_id", "unknown"))
-            val = log.get("value")
+        result.append(
+            {
+                "time": format_time(doc.get("time")),
+                "device": DEVICE_MAP.get(device_num, f"Thiết bị {device_num}"),
+                "old_value": "Bật" if old_status else "Tắt",
+                "new_value": "Bật" if new_status else "Tắt",
+                "actor": "Hệ thống" if "hệ thống" in reason.lower() else "Người dùng",
+            }
+        )
 
-            if isinstance(val, (int, float)):
-                sum_val[dev] += val
-                count[dev] += 1
+    return result
 
-            elif isinstance(val, dict):
-                for k, v in val.items():
-                    if isinstance(v, (int, float)):
-                        key = f"{dev}.{k}"
-                        sum_val[key] += v
-                        count[key] += 1
 
-        result = {}
-        for key in sum_val:
-            result[key] = round(sum_val[key] / count[key], 2)
+# =============================
+# 4. SYSTEM UPDATE HISTORY
+# =============================
+@router.get("/system-updates")
+async def get_system_updates(limit: int = Query(20)):
+    if system_collection is None:
+        return []
 
-        return {"strategy": strategy, "data": result}
+    cursor = system_collection.find().sort("time", -1).limit(limit)
 
-    elif strategy == "trend":
-        buckets = defaultdict(lambda: defaultdict(int))
+    result = []
+    async for doc in cursor:
+        result.append(
+            {
+                "time": format_time(doc.get("time")),
+                "field": doc.get("field"),
+                "old_value": doc.get("old_value"),
+                "new_value": doc.get("new_value"),
+            }
+        )
 
-        for log in logs:
-            ts = log.get("timestamp")
-            level = log.get("level", "INFO")
-
-            # ✅ chỉ xử lý datetime (không parse string nữa)
-            if not isinstance(ts, datetime):
-                continue
-
-            if period == "day":
-                label = ts.strftime("%H:00")
-            else:
-                label = ts.strftime("%Y-%m-%d")
-
-            buckets[label]["count"] += 1
-            buckets[label][level] += 1
-
-        sorted_labels = sorted(buckets.keys())
-        data = [{"label": lbl, **buckets[lbl]} for lbl in sorted_labels]
-
-        return {"strategy": strategy, "data": data}
-
-    else:
-        return {"strategy": strategy, "data": {}}
+    return result
