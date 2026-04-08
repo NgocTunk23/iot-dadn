@@ -96,19 +96,30 @@ def check_and_log_motion():
 #? --- HÀM ĐỊNH TUYẾN & ĐIỀU KHIỂN THIẾT BỊ ---
 def check_devices(number, status):
     
-    # --- Nhóm 1: Các đèn LED (ID: 1, 2, 3, 4) ---
-    if number in [1, 2, 3, 4]: 
+    # --- XỬ LÝ RIÊNG THIẾT BỊ 1 (CẢM BIẾN CHUYỂN ĐỘNG) ---
+    if number == 1:
+        if current_device_status[1] != status:
+            current_device_status[1] = status # Cập nhật trạng thái kích hoạt/tắt
+            
+            if status == True:
+                print("Hệ thống chống trộm (Đèn 1): ĐÃ KÍCH HOẠT CHỜ")
+                # KHÔNG BẬT ĐÈN Ở ĐÂY, để hàm check_and_log_motion tự lo
+            else:
+                tiny_rgb.show(1, hex_to_rgb("#000000"))
+                print("Hệ thống chống trộm (Đèn 1): ĐÃ TẮT HOÀN TOÀN")
+
+    # --- Các đèn LED bình thường (ID: 2, 3, 4) ---
+    elif number in [2, 3, 4]:
         if current_device_status[number] != status:
             if status == True:
                 tiny_rgb.show(number, hex_to_rgb("#ffffff"))
-                print("Đèn LED số", number, ": Đã BẬT (Kích hoạt chống trộm)")
+                print("Đèn LED số", number, ": Đã BẬT")
             else:
                 tiny_rgb.show(number, hex_to_rgb("#000000"))
-                print("Đèn LED số", number, ": Đã TẮT (Vô hiệu hóa chống trộm)")
-            
+                print("Đèn LED số", number, ": Đã TẮT")
             current_device_status[number] = status
 
-    # --- Nhóm 2: Động cơ Servo (ID: 5) ---
+    # --- Nhóm 2: Động cơ Servo (ID: 6) ---
     elif number == 6:
         angle = int(status)
         if current_device_status[6] != angle:
@@ -116,7 +127,7 @@ def check_devices(number, status):
             print("Servo (ID 6) quay đến góc:", angle, "độ")
             current_device_status[6] = angle # CẬP NHẬT BỘ NHỚ
 
-    # --- Nhóm 3: Quạt / Động cơ PWM (ID: 6) ---
+    # --- Nhóm 3: Quạt / Động cơ PWM (ID: 7) ---
     elif number == 7:
         speed = int(status)
         if current_device_status[7] != speed:
@@ -192,30 +203,6 @@ while True:
                     is_music_playing = False
                     print("- ĐÃ QUA 15S AN TOÀN, TẮT NHẠC -")
     # ==================== CODE THÊM MỚI (KẾT THÚC) ===================
-
-
-    # --- CẬP NHẬT LCD (MỖI 5 GIÂY MỘT LẦN) ---
-    # if time.ticks_diff(time.ticks_ms(), last_lcd_update) > 5000:
-    #     if 'is_danger_alert' in locals() and is_danger_alert:
-    #         aiot_lcd1602.clear()
-    #         aiot_lcd1602.move_to(0, 0)
-    #         aiot_lcd1602.putstr('! NGUY HIEM !')
-    #     else:
-    #         aiot_dht20.read_dht20()
-            
-    #         # Đưa con trỏ về đầu dòng và in, CỘNG THÊM KHOẢNG TRẮNG ("  ") ở cuối 
-    #         # để lấp đi các ký tự thừa của lần in trước mà không cần dùng hàm clear()
-    #         aiot_lcd1602.move_to(0, 0)
-    #         aiot_lcd1602.putstr('ND:' + str(aiot_dht20.dht20_temperature()) + '   ')
-            
-    #         aiot_lcd1602.move_to(8, 0)
-    #         aiot_lcd1602.putstr('DA:' + str(aiot_dht20.dht20_humidity()) + '   ')
-            
-    #         aiot_lcd1602.move_to(0, 1)
-    #         aiot_lcd1602.putstr('AS:' + str(translate((pin2.read_analog()), 0, 4095, 0, 100)) + '   ')
-            
-    #     # Reset lại mốc thời gian
-    #     last_lcd_update = time.ticks_ms()
 
     mqtt.check_message()
     event_manager.run()
