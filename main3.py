@@ -12,9 +12,9 @@ import gc
 
 
 #? --- CẤU HÌNH ---
-SERVER_URL = "http://10.28.128.49:5000/update" 
-COMMANDS_URL = "http://10.28.128.49:5000/api/get-commands" 
-HOUSEID = "HS001" 
+SERVER_URL = "http://10.28.128.104:5000/update" 
+COMMANDS_URL = "http://10.28.128.104:5000/api/get-commands" 
+HOUSEID = "HS001"
 
 tiny_rgb = RGBLed(pin16.pin, 4) 
 aiot_dht20 = DHT20()
@@ -142,44 +142,38 @@ mqtt.connect_broker(server='mqtt.ohstem.vn', port=1883, username='xinchao', pass
 # mqtt.on_receive_message('V4', on_mqtt_message_receive_callback__V4_)
 display.scroll('ALL')
 last_lcd_update = time.ticks_ms()
-last_cmd_update = time.ticks_ms() # THÊM DÒNG NÀY: Mốc thời gian lần cuối gọi API
 
 # --- VÒNG LẶP CHÍNH ---
 while True:
     
     check_and_log_motion() 
     
-    # THÊM ĐIỀU KIỆN NÀY: Chỉ gọi API nếu đã trôi qua 5000ms (5 giây)
-    if time.ticks_diff(time.ticks_ms(), last_cmd_update) > 5000:
-        try: # Nhận lệnh từ Server 
-            response = urequests.get(COMMANDS_URL)
-            is_danger_alert = False # Biến lưu trạng thái cảnh báo nguy hiểm
+    try: # Nhận lệnh từ Server (Mỗi 5 giây một lần)
+        response = urequests.get(COMMANDS_URL)
+        is_danger_alert = False # Biến lưu trạng thái cảnh báo nguy hiểm
+        
+        if response.status_code == 200:
+            data = response.json()
             
-            if response.status_code == 200:
-                data = response.json()
+            # Đọc trạng thái cảnh báo từ Server
+            if 'is_danger' in data:
+                is_danger_alert = data['is_danger']
+
+            if 'numberdevices' in data:
+                commands = data['numberdevices'] 
                 
-                # Đọc trạng thái cảnh báo từ Server
-                if 'is_danger' in data:
-                    is_danger_alert = data['is_danger']
-
-                if 'numberdevices' in data:
-                    commands = data['numberdevices'] 
+                for cmd in commands:
+                    dev_id = cmd['numberdevice']     
+                    dev_status = cmd['status'] 
                     
-                    for cmd in commands:
-                        dev_id = cmd['numberdevice']     
-                        dev_status = cmd['status'] 
-                        
-                        check_devices(dev_id, dev_status)
-                        
-            response.close()
+                    check_devices(dev_id, dev_status)
+                    
+        response.close()
 
-        except Exception as e:
-            print("Lỗi nhận lệnh từ Server:", e)
-            try: response.close()
-            except: pass
-            
-        # Cập nhật lại mốc thời gian sau khi đã xử lý xong API
-        last_cmd_update = time.ticks_ms()
+    except Exception as e:
+        print("Lỗi nhận lệnh từ Server:", e)
+        try: response.close()
+        except: pass
 
     # Phát nhạc vượt ngưỡng khi nhiệt độ cao (báo cháy)
     # ==================== CODE THÊM MỚI (BẮT ĐẦU) ====================
@@ -227,5 +221,5 @@ while True:
 
     mqtt.check_message()
     event_manager.run()
-    time.sleep_ms(500) # Giữ nguyên 100ms của bạn để API phản hồi nhanh
+    time.sleep_ms(100) # Giữ nguyên 100ms của bạn để API phản hồi nhanh
     gc.collect()
