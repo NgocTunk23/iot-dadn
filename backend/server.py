@@ -135,7 +135,7 @@ async def handle_data(payload: dict = Body(...)):
         is_danger_global = is_danger_val
         module3.device_status = new_status_val
 
-        # --- 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM ---
+        # 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM CÔNG TẮC
         devices_status_array = payload.get("numberdevices", [])
 
         for dev in devices_status_array:
@@ -143,7 +143,7 @@ async def handle_data(payload: dict = Body(...)):
             stat = dev.get("status")
 
             if last_device_status.get(dev_num) != stat:
-                # Đổi chữ hiển thị cho dễ nhìn
+                # Phân biệt lý do
                 if dev_num == 1:
                     reason_str = "Người dùng cấu hình chống trộm"
                 else:
@@ -164,8 +164,9 @@ async def handle_data(payload: dict = Body(...)):
                 }
                 await device_log_collection.update_one({"_id": dev_id_in_db}, {"$set": device_log}, upsert=True)
                 last_device_status[dev_num] = stat
+                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
 
-        # --- 3.2 GHI LOG KHI CẢM BIẾN PIR PHÁT HIỆN CÓ NGƯỜI ---
+        # 3.2 GHI LOG KHI CẢM BIẾN PIR PHÁT HIỆN CÓ NGƯỜI (TÍN HIỆU NGẦM)
         pir_active = payload.get("pir_active")
         if pir_active is not None:
             if app.state.last_pir_state != pir_active:
@@ -175,13 +176,13 @@ async def handle_data(payload: dict = Body(...)):
                     reason_str = "Ngừng phát hiện người (Đèn tắt tạm thời)"
 
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                dev_id_in_db = f"{timestamp_str}PIR" # ID phụ để không trùng lặp db
+                dev_id_in_db = f"{timestamp_str}PIR"
 
                 device_log = {
                     "_id": dev_id_in_db,
                     "time": common_time,
                     "houseid": house_id,
-                    "numberdevice": 1,  # Vẫn gắn mác thiết bị 1 để lên UI Giao diện
+                    "numberdevice": 1, # Gắn mác ID 1 để hiện lên bảng log trên UI
                     "old_status": app.state.last_pir_state,
                     "new_status": pir_active,
                     "reason": reason_str,
