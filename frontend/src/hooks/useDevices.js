@@ -292,16 +292,13 @@ export default function useDevices(addToast) {
     const DEVICE_NAMES = { 2: 'Đèn 2', 3: 'Đèn 3', 4: 'Đèn 4', 6: 'Servo (Cửa)', 7: 'Quạt' };
 
     if (active) {
-      // KIỂM TRA TRÙNG THIẾT BỊ (Bỏ qua ĐÈN ở việc check trùng)
+      // KIỂM TRA TRÙNG THIẾT BỊ TẤT CẢ CÁC THIẾT BỊ
       const activeModes = modes.filter(m => m.active && m.id !== id);
       const overlapIds = new Set();
       
       activeModes.forEach(m => {
         m.action.forEach(a => {
-          // Chỉ coi Servo và Quạt (id >= 6) là thiết bị có thể "trùng" (conflict)
-          if (a.numberdevice >= 6) {
-            overlapIds.add(a.numberdevice);
-          }
+          overlapIds.add(a.numberdevice);
         });
       });
 
@@ -309,11 +306,11 @@ export default function useDevices(addToast) {
 
       if (conflicts.length > 0) {
         const names = conflicts.map(a => DEVICE_NAMES[a.numberdevice] || `TB ${a.numberdevice}`).join(', ');
-        if (addToast) addToast(`⚠️ Cảnh báo: Bỏ qua thiết bị đang được sử dụng ở chế độ khác: ${names}`, 'warning');
+        if (addToast) addToast(`⚠️ Cảnh báo: Chế độ không được bật do trùng thiết bị đang được sử dụng ở chế độ khác: ${names}`, 'error');
+        return; // Dừng kích hoạt chế độ này
       }
 
-      // Loại bỏ các thiết bị bị trùng
-      const actionsToApply = targetMode.action.filter(a => !overlapIds.has(a.numberdevice));
+      const actionsToApply = targetMode.action;
 
       try {
         setDeviceStates(prev => {
