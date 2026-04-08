@@ -179,7 +179,7 @@ async def handle_data(payload: dict = Body(...)):
                 if pir_active == True:
                     reason_str = "Hệ thống phát hiện có người (Đèn sáng)"
                 else:
-                    reason_str = "Ngừng phát hiện người (Đèn tắt tạm thời)"
+                    reason_str = "Hệ thống ngừng phát hiện người (Đèn tắt tạm thời)"
 
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
                 dev_id_in_db = f"{timestamp_str}PIR"

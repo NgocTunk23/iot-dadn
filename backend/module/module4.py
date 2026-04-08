@@ -214,17 +214,55 @@ async def get_device_history(limit: int = Query(20)):
     result = []
     async for doc in cursor:
         device_num = doc.get("numberdevice")
+
+        # --- THÊM 2 DÒNG NÀY VÀO ĐÂY ---
+        # Nếu là thiết bị số 5 thì bỏ qua, không đọc và không thêm vào mảng kết quả
+        if device_num == 5:
+            continue
+        # -------------------------------
+
+        
         old_status = doc.get("old_status", False)
         new_status = doc.get("new_status", False)
         reason = doc.get("reason", "")
+
+        # --- Nâng cấp hàm xử lý trạng thái ---
+        def format_status(val, dev_num):
+            # 1. Xử lý RIÊNG cho Servo (Thiết bị số 6)
+            if dev_num == 6:
+                if val == 0 or val is False:
+                    return "Đóng"
+                return "Mở"
+
+            # 2. Xử lý RIÊNG cho Quạt (Thiết bị số 7)
+            if dev_num == 7:
+                if val == 0 or val is False:
+                    return "Tắt"
+                elif val == 70:
+                    return "Mức 1"
+                elif val == 80:
+                    return "Mức 2"
+                elif val == 90:
+                    return "Mức 3"
+                elif val == 100:
+                    return "Mức 4"
+                # Dự phòng nếu sau này có gửi số lạ không nằm trong 4 mức trên
+                return f"Mức {val}" 
+
+            # 3. Nếu là Đèn/Công tắc thông thường (True/False)
+            if isinstance(val, bool):  
+                return "Bật" if val else "Tắt"
+            
+            # Các trường hợp thiết bị khác (nếu có)
+            return str(val)
 
         result.append(
             {
                 "time": format_time(doc.get("time")),
                 "device": DEVICE_MAP.get(device_num, f"Thiết bị {device_num}"),
-                "old_value": "Bật" if old_status else "Tắt",
-                "new_value": "Bật" if new_status else "Tắt",
-                "actor": "Hệ thống" if "hệ thống" in reason.lower() else "Người dùng",
+                "old_value": format_status(old_status, device_num),
+                "new_value": format_status(new_status, device_num),
+                "actor": "Hệ thống" if any(kw in reason.lower() for kw in ["hệ thống", "tự động", "ngừng phát hiện"]) else "Người dùng",
             }
         )
 
