@@ -76,38 +76,36 @@ def check_and_log_motion():
     global pir_trigger_time
     current_time = time.ticks_ms()
     
-    if pin1.read_digital() == 1:
-        # Có người -> Bật đèn và RESET lại mốc 10 giây
-        if current_device_status[1] == False:
-            print("PIR: Phát hiện chuyển động -> Bật đèn 1")
+    # CHỈ xử lý cảm biến PIR nếu "công tắc" thiết bị 1 đang BẬT (True)
+    if current_device_status.get(1) == True:
+        if pin1.read_digital() == 1:
+            # Có người -> Giữ đèn sáng và cập nhật mốc thời gian
             tiny_rgb.show(1, hex_to_rgb("#ffffff"))
-            current_device_status[1] = True
-        
-        pir_trigger_time = current_time # Luôn cập nhật mốc thời gian khi còn người
-    else:
-        # Không có người -> Kiểm tra xem đã hết 10s kể từ lần cuối thấy người chưa
-        if current_device_status[1] == True:
+            pir_trigger_time = current_time 
+        else:
+            # Không có người -> Kiểm tra xem đã hết 10 giây chưa để tắt đèn tạm thời
             if time.ticks_diff(current_time, pir_trigger_time) > 10000:
                 tiny_rgb.show(1, hex_to_rgb('#000000'))
-                current_device_status[1] = False
-                print("PIR: Đã hết 10s yên tĩnh -> Tắt đèn 1")
+                # Lưu ý: Không set current_device_status[1] = False ở đây 
+                # để hệ thống vẫn ở trạng thái "Sẵn sàng chống trộm"
+    else:
+        # Nếu công tắc đang TẮT, luôn đảm bảo đèn tắt và không đọc PIR
+        tiny_rgb.show(1, hex_to_rgb('#000000'))
 
 
 #? --- HÀM ĐỊNH TUYẾN & ĐIỀU KHIỂN THIẾT BỊ ---
 def check_devices(number, status):
     
     # --- Nhóm 1: Các đèn LED (ID: 1, 2, 3, 4) ---
-    if number in [2, 3, 4]:#! ĐỂ SỐ 1 cho có chứ không có thanh nào truyền cho nó id 1 thì 10 năm nó bật nên khỏi cũng được
-        # Nếu trạng thái gửi xuống khác với trạng thái hiện tại thì mới thực thi
+    if number in [1, 2, 3, 4]: 
         if current_device_status[number] != status:
             if status == True:
                 tiny_rgb.show(number, hex_to_rgb("#ffffff"))
-                print("Đèn LED số", number, ": Đã BẬT")
-            elif status == False:
+                print("Đèn LED số", number, ": Đã BẬT (Kích hoạt chống trộm)")
+            else:
                 tiny_rgb.show(number, hex_to_rgb("#000000"))
-                print("Đèn LED số", number, ": Đã TẮT")
+                print("Đèn LED số", number, ": Đã TẮT (Vô hiệu hóa chống trộm)")
             
-            # CẬP NHẬT BỘ NHỚ
             current_device_status[number] = status
 
     # --- Nhóm 2: Động cơ Servo (ID: 5) ---

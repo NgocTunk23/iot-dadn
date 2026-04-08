@@ -173,13 +173,13 @@ async def handle_data(payload: dict = Body(...)):
                     {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
                 )
 
-                # Đồng bộ lại Backend nếu là chống trộm tự động bật đèn 1
-                if reason_str == "do hệ thống tự động bật (chống trộm)":
-                    for i, item in enumerate(module3.device_status):
-                        if item[0] == 1:
-                            module3.device_status[i][1] = True
-                            app.state.device_status = module3.device_status
-                            break
+                # # Đồng bộ lại Backend nếu là chống trộm tự động bật đèn 1
+                # if reason_str == "do hệ thống tự động bật (chống trộm)":
+                #     for i, item in enumerate(module3.device_status):
+                #         if item[0] == 1:
+                #             module3.device_status[i][1] = True
+                #             app.state.device_status = module3.device_status
+                #             break
 
                 last_device_status[dev_num] = stat
                 print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
