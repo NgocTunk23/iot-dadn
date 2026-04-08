@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-// import LogSection from "../components/LogSection";
+import LoggingTables from "./LoggingTables";
+
 import {
   Chart,
   LineController,
@@ -267,8 +268,15 @@ export default function Dashboard({ data }) {
   useEffect(() => {
     const fetchComparison = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/sensor-comparison`);
-        setComparison(res.data);
+        const res = await axios.get(`${API_BASE}/sensor-data`);
+        const d = res.data;
+
+        // Tính delta so với baseline
+        setComparison({
+          temp: { delta: +(d.temp - 28).toFixed(1), label: "So với ngưỡng cơ sở" },
+          humi: { delta: +(d.humi - 65).toFixed(1), label: "So với ngưỡng cơ sở" },
+          light: { delta: +(d.light - 50).toFixed(1), label: "So với ngưỡng cơ sở" },
+        });
       } catch {
         setComparison({
           temp: { delta: 1.2, label: 'So với trung bình ngày' },
@@ -420,6 +428,10 @@ export default function Dashboard({ data }) {
         <p style={{ marginTop: '5px' }}>
           Cập nhật cuối: <span style={{ color: 'var(--text-primary)' }}>{data.time}</span>
         </p>
+      </div>
+      {/* LOGGING TABLE */}
+      <div style={{ marginTop: '30px' }}>
+        <LoggingTables />
       </div>
     </>
   );
