@@ -81,6 +81,8 @@ init_module2(
 app.state.device_status = shared_device_status
 app.state.is_danger_global = False
 app.state.latest_sensor_data = {}
+# Thêm dòng này vào ngay dưới:
+app.state.last_pir_state = False
 
 app.include_router(module2_router)
 
@@ -133,30 +135,22 @@ async def handle_data(payload: dict = Body(...)):
         is_danger_global = is_danger_val
         module3.device_status = new_status_val
 
-        # 3. GHI LOG THIẾT BỊ (Bảng Device_log)
-        # Yolobit gửi mảng `numberdevices` dạng dictionary: [{"numberdevice": 1, "status": True}, ...]
+        # --- 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM ---
         devices_status_array = payload.get("numberdevices", [])
 
         for dev in devices_status_array:
             dev_num = dev.get("numberdevice")
             stat = dev.get("status")
 
-            # Chỉ ghi log nếu trạng thái thay đổi so với lần cuối
-            # key của dict last_device_status là dev_num
             if last_device_status.get(dev_num) != stat:
-
-                # Kiểm tra xem đây có phải là chống trộm tự động bật thiết bị 1 không?
-                # (Thiết bị 1 bật nhưng Backend không hề ra lệnh bật trước đó)
-                cmd_dict = {item[0]: item[1] for item in module3.device_status}
-                if dev_num == 1 and stat == True and cmd_dict.get(1) == False:
-                    reason_str = "do hệ thống tự động bật (chống trộm)"
+                # Đổi chữ hiển thị cho dễ nhìn
+                if dev_num == 1:
+                    reason_str = "Người dùng cấu hình chống trộm"
                 else:
-                    reason_str = "do người dùng bật thủ công"
+                    reason_str = "Người dùng điều khiển thủ công"
 
-                # Format ID: ISODate + number ví dụ 2026-03-09T05:55:25.836Z1
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
                 dev_id_in_db = f"{timestamp_str}{dev_num}"
-
                 old_status = last_device_status.get(dev_num)
 
                 device_log = {
@@ -168,21 +162,33 @@ async def handle_data(payload: dict = Body(...)):
                     "new_status": stat,
                     "reason": reason_str,
                 }
-
-                await device_log_collection.update_one(
-                    {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
-                )
-
-                # # Đồng bộ lại Backend nếu là chống trộm tự động bật đèn 1
-                # if reason_str == "do hệ thống tự động bật (chống trộm)":
-                #     for i, item in enumerate(module3.device_status):
-                #         if item[0] == 1:
-                #             module3.device_status[i][1] = True
-                #             app.state.device_status = module3.device_status
-                #             break
-
+                await device_log_collection.update_one({"_id": dev_id_in_db}, {"$set": device_log}, upsert=True)
                 last_device_status[dev_num] = stat
-                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
+
+        # --- 3.2 GHI LOG KHI CẢM BIẾN PIR PHÁT HIỆN CÓ NGƯỜI ---
+        pir_active = payload.get("pir_active")
+        if pir_active is not None:
+            if app.state.last_pir_state != pir_active:
+                if pir_active == True:
+                    reason_str = "Hệ thống phát hiện có người (Đèn sáng)"
+                else:
+                    reason_str = "Ngừng phát hiện người (Đèn tắt tạm thời)"
+
+                timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                dev_id_in_db = f"{timestamp_str}PIR" # ID phụ để không trùng lặp db
+
+                device_log = {
+                    "_id": dev_id_in_db,
+                    "time": common_time,
+                    "houseid": house_id,
+                    "numberdevice": 1,  # Vẫn gắn mác thiết bị 1 để lên UI Giao diện
+                    "old_status": app.state.last_pir_state,
+                    "new_status": pir_active,
+                    "reason": reason_str,
+                }
+                await device_log_collection.update_one({"_id": dev_id_in_db}, {"$set": device_log}, upsert=True)
+                app.state.last_pir_state = pir_active
+                print(f"--- Đã ghi Log PIR: {reason_str} ---")
 
     except Exception as e:
         print(f"Lỗi DB: {e}")

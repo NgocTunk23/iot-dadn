@@ -60,7 +60,8 @@ def on_event_timer_callback_send_data():
         "temp": t, 
         "humi": h, 
         "light": l,
-        "numberdevices": devices_array # Gắn mảng thiết bị vào gói tin gửi đi
+        "numberdevices": devices_array, # Gắn mảng thiết bị vào gói tin gửi đi
+        "pir_active": is_pir_active # <--- THÊM DÒNG NÀY ĐỂ GỬI TRẠNG THÁI PIR
     }
     res = urequests.post(SERVER_URL, json=payload)
     print("Đã gửi dữ liệu lên Server thành công!")
@@ -72,25 +73,25 @@ def on_event_timer_callback_send_data():
 # --------------------------------------
 
 
+# THÊM BIẾN NÀY Ở TRÊN CÙNG (Dưới biến pir_trigger_time)
+is_pir_active = False
+
 def check_and_log_motion():
-    global pir_trigger_time
+    global pir_trigger_time, is_pir_active
     current_time = time.ticks_ms()
     
-    # CHỈ xử lý cảm biến PIR nếu "công tắc" thiết bị 1 đang BẬT (True)
     if current_device_status.get(1) == True:
         if pin1.read_digital() == 1:
-            # Có người -> Giữ đèn sáng và cập nhật mốc thời gian
             tiny_rgb.show(1, hex_to_rgb("#ffffff"))
             pir_trigger_time = current_time 
+            is_pir_active = True  # Đánh dấu đang có người
         else:
-            # Không có người -> Kiểm tra xem đã hết 10 giây chưa để tắt đèn tạm thời
             if time.ticks_diff(current_time, pir_trigger_time) > 10000:
                 tiny_rgb.show(1, hex_to_rgb('#000000'))
-                # Lưu ý: Không set current_device_status[1] = False ở đây 
-                # để hệ thống vẫn ở trạng thái "Sẵn sàng chống trộm"
+                is_pir_active = False # Đánh dấu hết người
     else:
-        # Nếu công tắc đang TẮT, luôn đảm bảo đèn tắt và không đọc PIR
         tiny_rgb.show(1, hex_to_rgb('#000000'))
+        is_pir_active = False
 
 
 #? --- HÀM ĐỊNH TUYẾN & ĐIỀU KHIỂN THIẾT BỊ ---
