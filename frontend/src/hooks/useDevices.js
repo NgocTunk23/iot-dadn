@@ -294,19 +294,29 @@ export default function useDevices(addToast) {
     if (active) {
       // KIỂM TRA TRÙNG THIẾT BỊ TẤT CẢ CÁC THIẾT BỊ
       const activeModes = modes.filter(m => m.active && m.id !== id);
-      const overlapIds = new Set();
+      
+      // Dùng Map để lưu trữ xem thiết bị nào đang bị chiếm bởi chế độ nào
+      const deviceToModeMap = new Map(); 
       
       activeModes.forEach(m => {
         m.action.forEach(a => {
-          overlapIds.add(a.numberdevice);
+          deviceToModeMap.set(a.numberdevice, m.name); // Ánh xạ: ID thiết bị -> Tên chế độ
         });
       });
 
-      const conflicts = targetMode.action.filter(a => overlapIds.has(a.numberdevice));
+      const conflicts = targetMode.action.filter(a => deviceToModeMap.has(a.numberdevice));
 
       if (conflicts.length > 0) {
-        const names = conflicts.map(a => DEVICE_NAMES[a.numberdevice] || `TB ${a.numberdevice}`).join(', ');
-        if (addToast) addToast(`⚠️ Cảnh báo: Chế độ không được bật do trùng thiết bị đang được sử dụng ở chế độ khác: ${names}`, 'error');
+        // Tạo câu thông báo chi tiết, VD: "Đèn 2 (tại chế độ Ban đêm), Quạt (tại chế độ Mùa hè)"
+        const conflictDetails = conflicts.map(a => {
+          const devName = DEVICE_NAMES[a.numberdevice] || `TB ${a.numberdevice}`;
+          const conflictingModeName = deviceToModeMap.get(a.numberdevice);
+          return `${devName}" thuộc chế độ "${conflictingModeName}"`; 
+        }).join(', ');
+
+        if (addToast) {
+          addToast(`⚠️ Cảnh báo:  Chế độ không được bật do trùng thiết bị "${conflictDetails}`, 'error');
+        }
         return; // Dừng kích hoạt chế độ này
       }
 

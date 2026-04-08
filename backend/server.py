@@ -135,19 +135,25 @@ async def handle_data(payload: dict = Body(...)):
         is_danger_global = is_danger_val
         module3.device_status = new_status_val
 
-        # 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM CÔNG TẮC
+        # 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM CÔNG TẮC HOẶC TỰ ĐỘNG
         devices_status_array = payload.get("numberdevices", [])
+
+        # Lấy tên kịch bản tự động đang chạy (nếu có)
+        active_rule = app.state.rule_mgr.get_active_rule_name(house_id)
 
         for dev in devices_status_array:
             dev_num = dev.get("numberdevice")
             stat = dev.get("status")
 
             if last_device_status.get(dev_num) != stat:
-                # Phân biệt lý do
+                # Phân biệt lý do linh hoạt hơn
                 if dev_num == 1:
                     reason_str = "Người dùng cấu hình chống trộm"
                 else:
-                    reason_str = "Người dùng điều khiển thủ công"
+                    if active_rule:
+                        reason_str = f"Tự động (Theo kịch bản: {active_rule})"
+                    else:
+                        reason_str = "Người dùng điều khiển thủ công"
 
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
                 dev_id_in_db = f"{timestamp_str}{dev_num}"
