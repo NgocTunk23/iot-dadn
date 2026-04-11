@@ -3,12 +3,14 @@ from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import re
+import uuid
 from module.notifiers import dispatch_all_channels
 
 router = APIRouter(prefix="/api", tags=["Module 2 – Safety & Automation"])
 
 VN_TZ = timezone(timedelta(hours=7))
 
+# Ngưỡng mặc định (dự phòng khi House chưa có cấu hình)
 DEFAULT_THRESHOLDS = {
     "temp":  {"min": 0,   "max": 40},
     "humi":  {"min": 20,  "max": 80},
@@ -20,11 +22,27 @@ DEVICE_NAMES = {
     4: "Đèn 4",        6: "Servo (Cửa)", 7: "Quạt",
 }
 
+# Ánh xạ tên field ngưỡng trong bảng House theo ERD
+HOUSE_THRESHOLD_FIELDS = {
+    "temp":  {"min": "tempmin",  "max": "tempmax"},
+    "humi":  {"min": "humimin",  "max": "humimax"},
+    "light": {"min": "lightmin", "max": "lightmax"},
+}
 
 
+# ══════════════════════════════════════════════════════════════════
+#  ThresholdManager  –  đọc/ghi ngưỡng vào bảng House
+# ══════════════════════════════════════════════════════════════════
 class ThresholdManager:
-    def __init__(self, collection):
-        self.col = collection
+    """
+    Lưu ngưỡng vào bảng House theo ERD:
+      tempmin, tempmax, humimin, humimax, lightmin, lightmax
+    Không dùng collection thresholds riêng nữa.
+    """
+
+    def __init__(self, house_col, logupdate_col=None):
+        self.house_col = house_col   # db.House
+        self.logupdate_col = logupdate_col
 
     @staticmethod
     def validate(sensor: str, min_val: float, max_val: float) -> dict:
@@ -45,43 +63,100 @@ class ThresholdManager:
         return {"ok": True}
 
     async def get_thresholds(self, houseid: str) -> dict:
-        doc = await self.col.find_one({"_id": houseid})
-        if doc:
-            doc.pop("_id", None)
-            doc.pop("updated_at", None)
-            return doc
-        return dict(DEFAULT_THRESHOLDS)
+        """Trả về dict {"temp": {"min": x, "max": y}, ...} đọc từ bảng House."""
+        house = await self.house_col.find_one({"houseid": houseid})
+        result = {}
+        for sensor, fields in HOUSE_THRESHOLD_FIELDS.items():
+            default = DEFAULT_THRESHOLDS[sensor]
+            result[sensor] = {
+                "min": house.get(fields["min"], default["min"]) if house else default["min"],
+                "max": house.get(fields["max"], default["max"]) if house else default["max"],
+            }
+        return result
 
     async def set_threshold(self, houseid: str, sensor: str,
                              min_val: float, max_val: float) -> dict:
         check = self.validate(sensor, min_val, max_val)
         if not check["ok"]:
             return {"status": "error", "message": check["message"]}
-        await self.col.update_one(
-            {"_id": houseid},
+
+        fields = HOUSE_THRESHOLD_FIELDS.get(sensor)
+        if not fields:
+            return {"status": "error", "message": f"Cảm biến '{sensor}' không hợp lệ."}
+
+        old_data_full = await self.get_thresholds(houseid)
+        old_sensor_data = old_data_full.get(sensor, DEFAULT_THRESHOLDS[sensor])
+        now = datetime.now(VN_TZ).replace(tzinfo=None)
+
+        # 2. CẬP NHẬT VÀO BẢNG HOUSE
+        await self.house_col.update_one(
+            {"houseid": houseid},
             {"$set": {
-                sensor: {"min": float(min_val), "max": float(max_val)},
-                "updated_at": datetime.now(VN_TZ),
+                fields["min"]: float(min_val),
+                fields["max"]: float(max_val),
+                "updatedat": now,
             }},
             upsert=True,
         )
+
+        # 3. GHI LOG VÀO BẢNG LOGUPDATE
+        if self.logupdate_col is not None:
+            log_entry = {
+                "time": now,
+                "houseid": houseid,
+                "target": f"Cấu hình ngưỡng ({sensor})",
+                "oldvalue": [{"min": old_sensor_data["min"], "max": old_sensor_data["max"]}],
+                "newvalue": [{"min": float(min_val), "max": float(max_val)}]
+            }
+            await self.logupdate_col.insert_one(log_entry)
+
         return {"status": "success", "message": "Cập nhật ngưỡng thành công."}
 
     async def reset_to_default(self, houseid: str) -> dict:
-        await self.col.update_one(
-            {"_id": houseid},
-            {"$set": {**DEFAULT_THRESHOLDS, "updated_at": datetime.now(VN_TZ)}},
+        old_data_full = await self.get_thresholds(houseid)
+        now = datetime.now(VN_TZ).replace(tzinfo=None)
+
+        # 2. TIẾN HÀNH RESET
+        update_fields: dict = {"updatedat": now}
+        for sensor, fields in HOUSE_THRESHOLD_FIELDS.items():
+            update_fields[fields["min"]] = DEFAULT_THRESHOLDS[sensor]["min"]
+            update_fields[fields["max"]] = DEFAULT_THRESHOLDS[sensor]["max"]
+
+        await self.house_col.update_one(
+            {"houseid": houseid},
+            {"$set": update_fields},
             upsert=True,
         )
+
+        # 3. GHI LOG RESET
+        if self.logupdate_col is not None:
+            log_entry = {
+                "time": now,
+                "houseid": houseid,
+                "target": "Cấu hình ngưỡng (Reset mặc định)",
+                "oldvalue": [old_data_full],
+                "newvalue": [DEFAULT_THRESHOLDS]
+            }
+            await self.logupdate_col.insert_one(log_entry)
+
         return {"status": "success", "thresholds": DEFAULT_THRESHOLDS}
 
 
+# ══════════════════════════════════════════════════════════════════
+#  NotificationChannelManager  –  đọc/ghi vào bảng House
+# ══════════════════════════════════════════════════════════════════
 class NotificationChannelManager:
+    """
+    Lưu kênh thông báo vào bảng House theo ERD:
+      emailtowarning: string
+      teletowarning: { token: string, id: string }
+    Cờ enabled lưu riêng: email_enabled, telegram_enabled trong House.
+    Không dùng collection notification_channels riêng nữa.
+    """
     CHANNELS = ("email", "telegram", "app")
 
-    def __init__(self, channel_col, house_col=None):
-        self.col       = channel_col   # db.notification_channels
-        self.house_col = house_col     # db.House
+    def __init__(self, house_col):
+        self.house_col = house_col   # db.House
 
     @staticmethod
     def validate_contact(channel: str, info: dict) -> dict:
@@ -91,34 +166,45 @@ class NotificationChannelManager:
                 return {"ok": False, "message": "Địa chỉ email không hợp lệ."}
         elif channel == "telegram":
             bot_token = info.get("bot_token", "")
-            chat_id   = info.get("chat_id", "")
             if bot_token and len(str(bot_token).strip()) < 10:
                 return {"ok": False, "message": "Bot token không hợp lệ (quá ngắn)."}
         return {"ok": True}
 
     async def get_channels(self, houseid: str) -> dict:
+        """
+        Đọc từ bảng House, trả về format chuẩn cho frontend:
+        {
+          email:    { enabled: bool, address: str },
+          telegram: { enabled: bool, bot_token: str, chat_id: str },
+          app:      { enabled: bool }
+        }
+        """
         result = {
             "email":    {"enabled": False},
             "telegram": {"enabled": False},
             "app":      {"enabled": True},
         }
-        if self.house_col is not None:
-            house = await self.house_col.find_one({"houseid": houseid})
-            if house:
-                if house.get("emailtowarning"):
-                    result["email"]["address"] = house["emailtowarning"]
-                tele = house.get("teletowarning", {})
-                if tele.get("token"):
-                    result["telegram"]["bot_token"] = tele["token"]
-                if tele.get("id"):
-                    result["telegram"]["chat_id"] = tele["id"]
+        house = await self.house_col.find_one({"houseid": houseid})
+        if not house:
+            return result
 
-        doc = await self.col.find_one({"_id": houseid})
-        if doc:
-            doc.pop("_id", None)
-            for ch, val in doc.items():
-                if ch in result and isinstance(val, dict):
-                    result[ch].update(val)
+        # Email
+        email_addr = house.get("emailtowarning", "")
+        if email_addr:
+            result["email"]["address"] = email_addr
+        result["email"]["enabled"] = bool(house.get("email_enabled", False))
+
+        # Telegram
+        tele = house.get("teletowarning") or {}
+        if isinstance(tele, dict):
+            token = tele.get("token", "")
+            chat  = tele.get("id", "")
+            if token:
+                result["telegram"]["bot_token"] = token
+            if chat:
+                result["telegram"]["chat_id"] = chat
+        result["telegram"]["enabled"] = bool(house.get("telegram_enabled", False))
+
         return result
 
     async def update_channel(self, houseid: str, channel: str,
@@ -131,144 +217,133 @@ class NotificationChannelManager:
         if not check["ok"]:
             return {"status": "error", "message": check["message"]}
 
-        update_data: dict[str, Any] = {f"{channel}.enabled": enabled}
-        for k, v in filtered_info.items():
-            update_data[f"{channel}.{k}"] = v
+        update_data: dict[str, Any] = {"updatedat": datetime.now(VN_TZ).replace(tzinfo=None)}
 
-        await self.col.update_one(
-            {"_id": houseid}, {"$set": update_data}, upsert=True
+        if channel == "email":
+            if "address" in filtered_info:
+                update_data["emailtowarning"] = filtered_info["address"]
+            update_data["email_enabled"] = enabled
+
+        elif channel == "telegram":
+            # Merge vào sub-document hiện có
+            house = await self.house_col.find_one({"houseid": houseid}) or {}
+            existing_tele = house.get("teletowarning") or {}
+            if "bot_token" in filtered_info:
+                existing_tele["token"] = filtered_info["bot_token"]
+            if "chat_id" in filtered_info:
+                existing_tele["id"] = filtered_info["chat_id"]
+            update_data["teletowarning"]   = existing_tele
+            update_data["telegram_enabled"] = enabled
+
+        elif channel == "app":
+            update_data["app_enabled"] = enabled
+
+        await self.house_col.update_one(
+            {"houseid": houseid},
+            {"$set": update_data},
+            upsert=True,
         )
         return {"status": "success", "message": "Cập nhật thành công."}
 
+    # Alias dùng trong AlertDispatcher
+    async def get_channels_for_dispatch(self, houseid: str) -> dict:
+        return await self.get_channels(houseid)
 
 
+# ══════════════════════════════════════════════════════════════════
+#  AutomationRuleManager  –  condition dùng threshold_type (min/max)
+# ══════════════════════════════════════════════════════════════════
 class AutomationRuleManager:
-    OPERATORS = {"gt": ">", "lt": "<", "gte": ">=", "lte": "<=", "eq": "=="}
+    """
+    Điều kiện kịch bản KHÔNG nhập số thủ công.
+    Mỗi điều kiện chỉ cần:  { sensor, threshold_type }
+      threshold_type = "max"  →  kích hoạt khi sensor_value > ngưỡng max của House
+      threshold_type = "min"  →  kích hoạt khi sensor_value < ngưỡng min của House
 
-    def __init__(self, collection):
-        self.col = collection  # db.Scenario
+    Format lưu DB (bảng Scenario):
+      conditions: [{ sensor: "temp", threshold_type: "max" }, ...]
+    """
 
-    @staticmethod
-    def _check_condition(condition: dict, sensor_data: dict) -> bool:
-        sensor  = condition.get("sensor")
-        op      = condition.get("op")
-        value   = condition.get("value")
-        current = sensor_data.get(sensor)
-        if current is None or op not in AutomationRuleManager.OPERATORS:
-            return False
-        ops = {
-            "gt":  lambda a, b: a > b,
-            "lt":  lambda a, b: a < b,
-            "gte": lambda a, b: a >= b,
-            "lte": lambda a, b: a <= b,
-            "eq":  lambda a, b: a == b,
-        }
-        try:
-            return ops[op](float(current), float(value))
-        except (TypeError, ValueError):
-            return False
-        
+    def __init__(self, collection, threshold_mgr: ThresholdManager):
+        self.col           = collection       # db.Scenario
+        self.threshold_mgr = threshold_mgr    # lấy ngưỡng từ House khi evaluate
+
     @staticmethod
     def _validate_conditions(conditions: list) -> dict:
         VALID_SENSORS = {"temp", "humi", "light"}
-        VALID_OPS     = {"gt", "gte", "lt", "lte", "eq"}
- 
+
         if not conditions or not isinstance(conditions, list):
             return {"ok": False, "message": "Phải có ít nhất một điều kiện."}
         if len(conditions) > 3:
             return {"ok": False, "message": "Tối đa 3 điều kiện mỗi kịch bản."}
- 
-        # Validate từng điều kiện
+
         for i, cond in enumerate(conditions):
-            if not all(k in cond for k in ("sensor", "op", "value")):
-                return {"ok": False, "message": f"Điều kiện {i+1} thiếu trường sensor/op/value."}
+            if "sensor" not in cond:
+                return {"ok": False, "message": f"Điều kiện {i+1} thiếu trường 'sensor'."}
             if cond["sensor"] not in VALID_SENSORS:
                 return {"ok": False, "message": f"Cảm biến '{cond['sensor']}' không hợp lệ."}
-            if cond["op"] not in VALID_OPS:
-                return {"ok": False, "message": f"Toán tử '{cond['op']}' không được hỗ trợ."}
-            try:
-                float(cond["value"])
-            except (TypeError, ValueError):
-                return {"ok": False, "message": f"Giá trị điều kiện {i+1} phải là số."}
- 
-        # Không được trùng sensor
-        sensors_used = [c["sensor"] for c in conditions]
-        if len(sensors_used) != len(set(sensors_used)):
+
+        # Không trùng sensor (Mỗi cảm biến chỉ được chọn 1 lần)
+        keys = [c["sensor"] for c in conditions]
+        if len(keys) != len(set(keys)):
             return {"ok": False, "message": "Mỗi cảm biến chỉ được xuất hiện một lần trong điều kiện."}
-        by_sensor: dict[str, list] = {}
-        for cond in conditions:
-            by_sensor.setdefault(cond["sensor"], []).append(cond)
- 
-        for sensor, conds in by_sensor.items():
-            if len(conds) < 2:
-                continue
-            gt_vals = [float(c["value"]) for c in conds if c["op"] in ("gt", "gte")]
-            lt_vals = [float(c["value"]) for c in conds if c["op"] in ("lt", "lte")]
-            if gt_vals and lt_vals:
-                gt_max = max(gt_vals)
-                lt_min = min(lt_vals)
-                if gt_max >= lt_min:
-                    return {
-                        "ok": False,
-                        "message": (
-                            f"Xung đột điều kiện trên {sensor}: "
-                            f"không thể vừa > {gt_max} vừa < {lt_min}."
-                        ),
-                    }
-            # eq xung đột với gt/lt
-            eq_vals = [float(c["value"]) for c in conds if c["op"] == "eq"]
-            if eq_vals:
-                for ev in eq_vals:
-                    for gv in gt_vals:
-                        if ev <= gv:
-                            return {"ok": False, "message": f"Xung đột: {sensor} = {ev} mâu thuẫn với > {gv}."}
-                    for lv in lt_vals:
-                        if ev >= lv:
-                            return {"ok": False, "message": f"Xung đột: {sensor} = {ev} mâu thuẫn với < {lv}."}
- 
+
         return {"ok": True}
 
+    async def _check_condition(self, cond: dict, sensor_data: dict, houseid: str) -> bool:
+        sensor  = cond.get("sensor")
+        current = sensor_data.get(sensor)
+        if current is None:
+            return False
+
+        thresholds  = await self.threshold_mgr.get_thresholds(houseid)
+        sensor_th   = thresholds.get(sensor)
+        if not sensor_th:
+            return False
+            
+        lo = sensor_th.get("min")
+        hi = sensor_th.get("max")
+        if lo is None or hi is None:
+            return False
+
+        try:
+            val = float(current)
+        except (TypeError, ValueError):
+            return False
+
+        # Vượt ngoài vùng an toàn (bé hơn min HOẶC lớn hơn max) thì trả về True
+        return val < lo or val > hi
+
     async def add_rule(self, houseid: str, name: str,
-                        condition: dict, actions: list,
-                        enabled: bool = True,
-                        conditions: list = None) -> dict:
+                        conditions: list, actions: list,
+                        enabled: bool = True) -> dict:
         if not name:
             return {"status": "error", "message": "Thiếu tên kịch bản."}
         if not actions:
             return {"status": "error", "message": "Thiếu hành động phản hồi."}
- 
-        if conditions and isinstance(conditions, list) and len(conditions) > 0:
-            conds_list = conditions
-        elif condition and isinstance(condition, dict):
-            conds_list = [condition]
-        else:
+        if not conditions:
             return {"status": "error", "message": "Thiếu điều kiện kích hoạt."}
- 
-        # Validate + conflict check
-        check = self._validate_conditions(conds_list)
+
+        check = self._validate_conditions(conditions)
         if not check["ok"]:
             return {"status": "error", "message": check["message"]}
- 
-        # Chuẩn hóa value sang float
-        conds_list = [{**c, "value": float(c["value"])} for c in conds_list]
- 
+
         scenario_id = f"{houseid}_{name.replace(' ', '_')}"
         doc = {
             "_id":        scenario_id,
             "scenarioid": scenario_id,
             "houseid":    houseid,
             "name":       name,
-            "conditions": conds_list,           # mảng điều kiện AND mới
-            "condition":  conds_list[0],        # tương thích ngược: điều kiện đầu tiên
+            "conditions": conditions,   # [{ sensor, threshold_type }]
             "action":     actions,
             "isactive":   enabled,
-            "createdat":  datetime.now(VN_TZ),
+            "createdat":  datetime.now(VN_TZ).replace(tzinfo=None),
         }
         await self.col.update_one({"_id": scenario_id}, {"$set": doc}, upsert=True)
         return {"status": "success",
                 "message": "Tạo kịch bản thành công.",
                 "scenarioid": scenario_id}
-    
+
     async def delete_rule(self, houseid: str, name: str) -> dict:
         scenario_id = f"{houseid}_{name.replace(' ', '_')}"
         result = await self.col.delete_one({"_id": scenario_id})
@@ -292,17 +367,13 @@ class AutomationRuleManager:
         for r in rules:
             action_list = r.get("action", [])
             scenario_id = str(r.get("_id", ""))
-            conds = r.get("conditions")
-            if not conds:
-                single = r.get("condition", {})
-                conds  = [single] if single else []
+            conds = r.get("conditions", [])
             output.append({
                 "_id":        scenario_id,
                 "scenarioid": scenario_id,
                 "houseid":    r.get("houseid"),
                 "name":       r.get("name"),
-                "conditions": conds,        
-                "condition":  conds[0] if conds else {},
+                "conditions": conds,
                 "action":     action_list,
                 "actions":    action_list,
                 "isactive":   r.get("isactive", True),
@@ -310,13 +381,14 @@ class AutomationRuleManager:
                 "createdat":  str(r.get("createdat", "")),
             })
         return output
+
     _rule_state: dict = {}   # houseid → RuleState
 
     @staticmethod
     def _get_sensor_set(conditions: list) -> frozenset:
         return frozenset(c.get("sensor") for c in conditions if c.get("sensor"))
+
     _SENSOR_PRIORITY = ["temp", "humi", "light"]
-    _COMBO_RANK: dict = {}   # được tính lười (lazy) lần đầu gọi
 
     @classmethod
     def _combo_rank(cls, sensor_set: frozenset) -> tuple:
@@ -340,18 +412,22 @@ class AutomationRuleManager:
 
         state = self._rule_state[houseid]
 
-        # ── 1. Lấy tất cả kịch bản đang bật ────────────────────────────
+        # 1. Lấy tất cả kịch bản đang bật
         cursor = self.col.find({"houseid": houseid, "isactive": True})
         rules  = await cursor.to_list(length=200)
 
-        # ── 2. Lọc & xếp hạng kịch bản thỏa điều kiện ───────────────────
+        # 2. Lọc & xếp hạng – check condition với ngưỡng từ House
         matched = []
         for rule in rules:
-            conds = rule.get("conditions") or []
+            conds = rule.get("conditions", [])
             if not conds:
-                single = rule.get("condition", {})
-                conds  = [single] if single else []
-            if conds and all(self._check_condition(c, sensor_data) for c in conds):
+                continue
+            all_met = True
+            for c in conds:
+                if not await self._check_condition(c, sensor_data, houseid):
+                    all_met = False
+                    break
+            if all_met:
                 matched.append((rule, self._combo_rank(self._get_sensor_set(conds))))
 
         matched.sort(key=lambda x: x[1])
@@ -363,35 +439,31 @@ class AutomationRuleManager:
         before           = {item[0]: item[1] for item in current_device_status}
         triggered_rules  = []
 
-        # ── 3. Không còn kịch bản nào thỏa → reset ngay ─────────────────
+        # 3. Không còn kịch bản nào thỏa → reset
         if winner_name is None:
             if currently_active is not None:
                 snap = state["pre_rule_snapshot"]
                 if snap:
                     new_status = [list(item) for item in snap]
-                print(f"[MODULE2] Kịch bản '{currently_active}' hết điều kiện – khôi phục ngay.")
+                print(f"[MODULE2] Kịch bản '{currently_active}' hết điều kiện – khôi phục.")
             state["active_rule_name"]        = None
             state["active_rule_name_expose"] = None
             state["pre_rule_snapshot"]       = None
             return new_status, []
 
-        # ── 4. Có winner – xử lý theo từng trường hợp ────────────────────
+        # 4. Có winner
         if winner_name != currently_active:
-            # Kịch bản mới (hoặc lần đầu) → kích hoạt ngay
             if currently_active is not None:
-                # Khôi phục snapshot kịch bản cũ trước khi apply mới
                 snap = state["pre_rule_snapshot"]
                 if snap:
                     new_status = [list(item) for item in snap]
                     before     = {item[0]: item[1] for item in new_status}
                 print(f"[MODULE2] Kịch bản '{currently_active}' bị thay bởi '{winner_name}'.")
 
-            # Chụp snapshot TRƯỚC khi apply
             state["pre_rule_snapshot"]       = [list(item) for item in new_status]
             state["active_rule_name"]        = winner_name
             state["active_rule_name_expose"] = winner_name
 
-            # Apply actions
             rule_changes = []
             for action in winner_rule.get("action", []):
                 dev_id = int(action.get("numberdevice"))
@@ -410,10 +482,10 @@ class AutomationRuleManager:
                         break
 
             triggered_rules = [{"rule_name": winner_name, "changes": rule_changes}]
-            print(f"[MODULE2] ✅ Kích hoạt ngay kịch bản: '{winner_name}'")
+            print(f"[MODULE2] ✅ Kích hoạt kịch bản: '{winner_name}'")
 
         else:
-            # Kịch bản đang chạy vẫn thỏa → duy trì + drift protection
+            # Drift protection – duy trì trạng thái kịch bản đang chạy
             state["active_rule_name_expose"] = winner_name
             for action in winner_rule.get("action", []):
                 dev_id = int(action.get("numberdevice"))
@@ -427,10 +499,12 @@ class AutomationRuleManager:
         return new_status, triggered_rules
 
     def get_active_rule_name(self, houseid: str) -> str | None:
-        """Trả về tên kịch bản đang chạy (dùng cho get-commands endpoint)."""
         return self._rule_state.get(houseid, {}).get("active_rule_name_expose")
 
 
+# ══════════════════════════════════════════════════════════════════
+#  DangerChecker  –  không thay đổi
+# ══════════════════════════════════════════════════════════════════
 class DangerChecker:
     @staticmethod
     def check(sensor_data: dict, thresholds: dict) -> dict:
@@ -454,16 +528,18 @@ class DangerChecker:
         return {"is_danger": len(violations) > 0, "violations": violations}
 
 
-
+# ══════════════════════════════════════════════════════════════════
+#  AlertDispatcher  –  đọc kênh từ House thông qua channel_mgr
+# ══════════════════════════════════════════════════════════════════
 class AlertDispatcher:
-    def __init__(self, danger_col, channel_col):
-        self.danger_col  = danger_col   # db.Danger_log
-        self.channel_col = channel_col  # db.notification_channels
+    def __init__(self, danger_col, channel_mgr: NotificationChannelManager):
+        self.danger_col  = danger_col    # db.Danger_log
+        self.channel_mgr = channel_mgr   # đọc cấu hình kênh từ House
 
     async def dispatch(self, houseid: str, violations: list,
                        sensor_data: dict, device_status_ref: list,
                        triggered_rules: list = None) -> dict:
-        now = datetime.now(VN_TZ)
+        now = datetime.now(VN_TZ).replace(tzinfo=None)
 
         danger_log = {
             "_id":     now,
@@ -480,12 +556,15 @@ class AlertDispatcher:
         }
         try:
             await self.danger_col.insert_one(danger_log)
+            print(f"[MODULE2] Đã ghi Danger_log")
         except Exception as e:
             print(f"[MODULE2] Lỗi ghi Danger_log: {e}")
 
-        channels_doc = await self.channel_col.find_one({"_id": houseid}) or {}
-        print(f"[MODULE2] Channels config: {channels_doc}")
+        # Lấy cấu hình kênh trực tiếp từ bảng House
+        channels_doc = await self.channel_mgr.get_channels_for_dispatch(houseid)
+        print(f"[MODULE2] Channels (House): {channels_doc}")
 
+        sent_channels = []
         try:
             results = await dispatch_all_channels(
                 houseid, violations, sensor_data, channels_doc,
@@ -499,7 +578,6 @@ class AlertDispatcher:
                 print(f"[MODULE2] ❌ Gửi thất bại: {failed}")
         except Exception as e:
             print(f"[MODULE2] Lỗi dispatch: {e}")
-            sent_channels = []
 
         return {"dispatched": True, "sent_channels": sent_channels}
 
@@ -508,6 +586,10 @@ class AlertDispatcher:
         if not is_danger:
             print(f"[MODULE2] An toàn – Yolobit tắt nhạc sau 15s.")
 
+
+# ══════════════════════════════════════════════════════════════════
+#  process_danger_and_rules  –  gọi từ server.py
+# ══════════════════════════════════════════════════════════════════
 async def process_danger_and_rules(app, payload: dict, house_id: str) -> tuple:
     sensor_data = {
         "temp":  payload.get("temp",  0),
@@ -520,8 +602,8 @@ async def process_danger_and_rules(app, payload: dict, house_id: str) -> tuple:
     alert_dispatcher = app.state.alert_dispatcher
 
     thresholds = await threshold_mgr.get_thresholds(house_id)
-    result = DangerChecker.check(sensor_data, thresholds)
-    is_danger = result["is_danger"]
+    result     = DangerChecker.check(sensor_data, thresholds)
+    is_danger  = result["is_danger"]
     app.state.is_danger_global = is_danger
 
     new_status, triggered_rules = await rule_mgr.evaluate_and_apply(
@@ -557,16 +639,28 @@ async def process_danger_and_rules(app, payload: dict, house_id: str) -> tuple:
 
     return is_danger, new_status
 
+
+# ══════════════════════════════════════════════════════════════════
+#  init_module2  –  server.py gọi khi khởi động
+# ══════════════════════════════════════════════════════════════════
 def init_module2(app, threshold_mgr, channel_mgr, rule_mgr,
-                 alert_dispatcher, danger_col, notif_channel_col):
+                 alert_dispatcher, danger_col):
+    """
+    Tham số thay đổi so với phiên bản cũ:
+      - Bỏ notif_channel_col (không còn collection riêng)
+      - threshold_mgr và channel_mgr giờ đều dùng house_col
+    """
     app.state.threshold_mgr     = threshold_mgr
     app.state.channel_mgr       = channel_mgr
     app.state.rule_mgr          = rule_mgr
     app.state.alert_dispatcher  = alert_dispatcher
     app.state.danger_collection = danger_col
-    app.state.notif_channel_col = notif_channel_col
     print("[MODULE2] init_module2 hoàn tất.")
 
+
+# ══════════════════════════════════════════════════════════════════
+#  API Endpoints
+# ══════════════════════════════════════════════════════════════════
 
 @router.get("/notification-channels")
 async def get_notification_channels(request: Request, houseid: str = "HS001"):
@@ -622,7 +716,7 @@ async def reset_thresholds(request: Request, payload: dict = Body(...)):
 
 @router.get("/automation-rules")
 async def get_automation_rules(request: Request, houseid: str = "HS001"):
-    mgr = request.app.state.rule_mgr
+    mgr   = request.app.state.rule_mgr
     rules = await mgr.get_rules(houseid)
     active_name = mgr.get_active_rule_name(houseid)
     for r in rules:
@@ -632,14 +726,14 @@ async def get_automation_rules(request: Request, houseid: str = "HS001"):
 
 @router.post("/automation-rules")
 async def create_automation_rule(request: Request, payload: dict = Body(...)):
-    mgr       = request.app.state.rule_mgr
-    houseid   = payload.get("houseid", "HS001")
-    name      = payload.get("name")
-    condition = payload.get("condition")
-    conditions = payload.get("conditions")
-    actions   = payload.get("actions") or payload.get("action")
-    enabled   = payload.get("enabled", payload.get("isactive", True))
-    res = await mgr.add_rule(houseid, name, condition, actions, enabled, conditions=conditions)
+    mgr        = request.app.state.rule_mgr
+    houseid    = payload.get("houseid", "HS001")
+    name       = payload.get("name")
+    conditions = payload.get("conditions", [])
+    actions    = payload.get("actions") or payload.get("action")
+    enabled    = payload.get("enabled", payload.get("isactive", True))
+
+    res = await mgr.add_rule(houseid, name, conditions, actions, enabled)
     if res["status"] == "error":
         return JSONResponse(status_code=400, content=res)
     return res
@@ -655,10 +749,6 @@ async def delete_automation_rule(request: Request,
 
 @router.patch("/automation-rules/toggle")
 async def toggle_automation_rule(request: Request, payload: dict = Body(...)):
-    """
-    Frontend gửi: { houseid, name, enabled: !rule.enabled }
-    Backend update: isactive = enabled
-    """
     mgr     = request.app.state.rule_mgr
     houseid = payload.get("houseid", "HS001")
     name    = payload.get("name")

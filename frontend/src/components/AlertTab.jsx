@@ -884,13 +884,13 @@ function ChannelTab({ addToast }) {
 
 /* ─────────────────── 3. KỊCH BẢN TỰ ĐỘNG ─────────────────── */
 const SENSOR_OPTS  = ['temp', 'humi', 'light'];
-const OP_OPTS      = [
-  { value: 'gt',  label: '> lớn hơn' },
-  { value: 'gte', label: '≥ lớn hơn hoặc bằng' },
-  { value: 'lt',  label: '< nhỏ hơn' },
-  { value: 'lte', label: '≤ nhỏ hơn hoặc bằng' },
-  { value: 'eq',  label: '= bằng' },
+
+// Điều kiện không nhập số – chỉ chọn loại ngưỡng; giá trị lấy từ cấu hình ngưỡng House
+const THRESHOLD_TYPE_OPTS = [
+  { value: 'max', label: '↑ Vượt ngưỡng MAX', color: '#ef4444', desc: 'Kích hoạt khi cảm biến > ngưỡng Max' },
+  { value: 'min', label: '↓ Dưới ngưỡng MIN', color: '#3b82f6', desc: 'Kích hoạt khi cảm biến < ngưỡng Min' },
 ];
+
 const SENSOR_LABEL = { temp: 'Nhiệt độ (°C)', humi: 'Độ ẩm (%)', light: 'Ánh sáng (%)' };
 const DEVICE_OPTS  = [
   { id: 1, label: '🚨 Đèn báo trộm' }, { id: 2, label: '💡 Đèn 2' },
@@ -898,11 +898,12 @@ const DEVICE_OPTS  = [
   { id: 6, label: '🚪 Servo' },
   { id: 7, label: '🌀 Quạt (0-100%)' },
 ];
-const FAN_LEVELS   = [70, 80, 90, 100];
-/* CHANGE 5: EMPTY_RULE nay dùng conditions (mảng), thay vì condition đơn lẻ */
+const FAN_LEVELS   = [0, 70, 80, 90, 100];
+
+// Điều kiện dùng { sensor, threshold_type } – không còn op/value nhập tay
 const EMPTY_RULE   = {
   name: '', enabled: true,
-  conditions: [{ sensor: 'temp', op: 'gt', value: 35 }],
+  conditions: [{ sensor: 'temp' }],
   actions: []
 };
 
@@ -978,18 +979,15 @@ function AutoRuleTab({ addToast }) {
 
   const openCreate = () => { setDraft(JSON.parse(JSON.stringify(EMPTY_RULE))); setEditName(null); setShowForm(true); };
   const openEdit = (rule) => {
-    /* CHANGE 5: hỗ trợ cả conditions (mảng mới) lẫn condition (cũ) */
-    const conds = rule.conditions
-      ? rule.conditions.map(c => ({ sensor: c.sensor || 'temp', op: c.op || 'gt', value: c.value || 0 }))
-      : [{ sensor: rule.condition?.sensor || 'temp', op: rule.condition?.op || 'gt', value: rule.condition?.value || 0 }];
+    // Tương thích với dữ liệu cũ, chỉ bóc lấy 'sensor'
+    const conds = (rule.conditions && rule.conditions.length > 0)
+      ? rule.conditions.map(c => ({ sensor: c.sensor || 'temp' }))
+      : [{ sensor: 'temp' }];
     setDraft({
-      name: rule.name,
-      enabled: rule.enabled,
-      conditions: conds,
+      name: rule.name, enabled: rule.enabled, conditions: conds,
       actions: (rule.actions || rule.action || []).map(a => ({ numberdevice: parseInt(a.numberdevice), status: a.status }))
     });
-    setEditName(rule.name);
-    setShowForm(true);
+    setEditName(rule.name); setShowForm(true);
   };
 
   const serializeStatus = (devId, status) => {
@@ -1000,37 +998,19 @@ function AutoRuleTab({ addToast }) {
 
   const handleSave = async () => {
     if (!draft.name.trim()) { addToast('Tên kịch bản không được rỗng!', 'error'); return; }
-    if (draft.actions.length === 0) {
-      addToast('Bạn chưa thêm thiết bị phản hồi cho kịch bản!', 'error');
-      return;
+    if (draft.actions.length === 0) { addToast('Bạn chưa thêm thiết bị phản hồi!', 'error'); return; }
+    
+    // Check trùng cảm biến
+    const keys = draft.conditions.map(c => c.sensor);
+    if (new Set(keys).size !== keys.length) {
+      addToast('⚠️ Mỗi cảm biến chỉ được xuất hiện một lần trong phần điều kiện!', 'error'); return;
     }
-    for (const c of draft.conditions) {
-      if (isNaN(parseFloat(c.value))) { addToast('Giá trị điều kiện phải là số!', 'error'); return; }
-    }
-    /* CHANGE 5: kiểm tra conflict - cùng sensor + op đối lập */
-    const sensorConds = {};
-    for (const c of draft.conditions) {
-      if (!sensorConds[c.sensor]) sensorConds[c.sensor] = [];
-      sensorConds[c.sensor].push(c);
-    }
-    for (const [sensor, conds] of Object.entries(sensorConds)) {
-      if (conds.length > 1) {
-        const hasGt = conds.some(c => c.op === 'gt' || c.op === 'gte');
-        const hasLt = conds.some(c => c.op === 'lt' || c.op === 'lte');
-        if (hasGt && hasLt) {
-          const gtVal = Math.max(...conds.filter(c => c.op === 'gt' || c.op === 'gte').map(c => parseFloat(c.value)));
-          const ltVal = Math.min(...conds.filter(c => c.op === 'lt' || c.op === 'lte').map(c => parseFloat(c.value)));
-          if (gtVal >= ltVal) { addToast(`⚠️ Xung đột điều kiện: ${SENSOR_LABEL[sensor]} không thể vừa > ${gtVal} vừa < ${ltVal}!`, 'error'); return; }
-        }
-      }
-    }
+    
     setSaving(true);
     try {
       await axios.post(`${API}/automation-rules`, {
         houseid: 'HS001', name: draft.name.trim(),
-        /* CHANGE 5: gửi cả conditions (mảng) + condition (tương thích ngược = cond đầu tiên) */
-        conditions: draft.conditions.map(c => ({ ...c, value: parseFloat(c.value) })),
-        condition: { ...draft.conditions[0], value: parseFloat(draft.conditions[0].value) },
+        conditions: draft.conditions.map(c => ({ sensor: c.sensor })), // Gửi mỗi sensor
         actions: draft.actions.map(a => ({ numberdevice: parseInt(a.numberdevice), status: serializeStatus(a.numberdevice, a.status) })),
         enabled: draft.enabled,
       });
@@ -1039,6 +1019,7 @@ function AutoRuleTab({ addToast }) {
     } catch (e) { addToast(e.response?.data?.message || 'Lỗi lưu kịch bản!', 'error'); }
     setSaving(false);
   };
+
 
   const handleDelete = async (name) => {
     if (!window.confirm(`Xóa kịch bản "${name}"?`)) return;
@@ -1067,12 +1048,12 @@ function AutoRuleTab({ addToast }) {
   };
   const removeAction = (i) => setDraft(prev => ({ ...prev, actions: prev.actions.filter((_, j) => j !== i) }));
 
-  /* CHANGE 5: thêm / xóa điều kiện */
+  // Thêm / xóa / cập nhật điều kiện (format mới: sensor + threshold_type)
   const addCondition = () => {
-    const usedSensors = new Set(draft.conditions.map(c => c.sensor));
-    const nextSensor = SENSOR_OPTS.find(s => !usedSensors.has(s));
-    if (!nextSensor) { addToast('Đã thêm tất cả loại cảm biến!', 'info'); return; }
-    setDraft(prev => ({ ...prev, conditions: [...prev.conditions, { sensor: nextSensor, op: 'gt', value: 0 }] }));
+    const usedKeys = new Set(draft.conditions.map(c => c.sensor));
+    const found = SENSOR_OPTS.find(s => !usedKeys.has(s)); // Tìm cảm biến chưa dùng
+    if (!found) { addToast('Đã thêm đủ tất cả các loại cảm biến!', 'info'); return; }
+    setDraft(prev => ({ ...prev, conditions: [...prev.conditions, { sensor: found }] }));
   };
   const removeCondition = (i) => setDraft(prev => ({ ...prev, conditions: prev.conditions.filter((_, j) => j !== i) }));
   const setCondition = (i, field, val) => setDraft(prev => {
@@ -1081,22 +1062,7 @@ function AutoRuleTab({ addToast }) {
     return { ...prev, conditions: conds };
   });
 
-  /* CHANGE 5: nút +/- to cho giá trị điều kiện */
-  const CondStepBtn = ({ onClick, children }) => (
-    <button onClick={onClick} style={{
-      width: '34px', height: '34px', borderRadius: '9px', border: '1.5px solid rgba(0,209,255,0.4)',
-      background: 'linear-gradient(135deg, rgba(0,209,255,0.15) 0%, rgba(0,209,255,0.05) 100%)',
-      color: '#00D1FF', fontWeight: 900, fontSize: '1.15rem',
-      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0, transition: 'all 0.18s', lineHeight: 1,
-      boxShadow: '0 2px 8px rgba(0,209,255,0.2)',
-    }}
-    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,209,255,0.25)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-    onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,209,255,0.15) 0%, rgba(0,209,255,0.05) 100%)'; e.currentTarget.style.transform = 'scale(1)'; }}
-    >{children}</button>
-  );
-
-  /* CHANGE 5: nút +/- cho action */
+  /* nút +/- cho action */
   const ActStepBtn = ({ color, onClick, children }) => (
     <button onClick={onClick} style={{
       width: '34px', height: '34px', borderRadius: '9px', border: `1.5px solid ${color}44`,
@@ -1208,191 +1174,82 @@ function AutoRuleTab({ addToast }) {
             />
           </InputRow>
 
-          {/* CHANGE 5: Multi-conditions block */}
+          {/* Điều kiện kích hoạt – chọn sensor + threshold_type, không nhập số */}
           <div
             style={{
-              background:
-                "linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)",
+              background: "linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)",
               borderRadius: "12px",
               padding: "16px",
               marginBottom: "16px",
               border: "1px solid rgba(0,209,255,0.15)",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  color: "#00D1FF",
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <span
-                  style={{
-                    width: "3px",
-                    height: "14px",
-                    background: "#00D1FF",
-                    borderRadius: "2px",
-                    boxShadow: "0 0 6px #00D1FF88",
-                    display: "inline-block",
-                  }}
-                />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#00D1FF", letterSpacing: "0.06em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ width: "3px", height: "14px", background: "#00D1FF", borderRadius: "2px", boxShadow: "0 0 6px #00D1FF88", display: "inline-block" }} />
                 <RadarIconSVG size={14} color="#00D1FF" /> Điều kiện kích hoạt
+                <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                  (ngưỡng lấy từ cấu hình ngưỡng)
+                </span>
               </div>
-              {/* CHANGE 5: nút thêm điều kiện */}
               {draft.conditions.length < 3 && (
                 <button
                   onClick={addCondition}
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: "8px",
-                    border: "1.5px solid rgba(0,209,255,0.4)",
-                    background: "rgba(0,209,255,0.1)",
-                    color: "#00D1FF",
-                    fontWeight: 700,
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                  }}
+                  style={{ padding: "5px 12px", borderRadius: "8px", border: "1.5px solid rgba(0,209,255,0.4)", background: "rgba(0,209,255,0.1)", color: "#00D1FF", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
                 >
                   + Thêm điều kiện
                 </button>
               )}
             </div>
 
-            {draft.conditions.map((cond, ci) => (
-              <div
-                key={ci}
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  marginBottom: ci < draft.conditions.length - 1 ? "10px" : 0,
-                  padding: "10px",
-                  background: "rgba(0,209,255,0.04)",
-                  borderRadius: "10px",
-                  border: "1px solid rgba(0,209,255,0.1)",
-                }}
-              >
-                {ci > 0 && (
-                  <span
-                    style={{
-                      fontSize: "0.7rem",
-                      fontWeight: 800,
-                      color: "#00D1FF",
-                      background: "rgba(0,209,255,0.18)",
-                      border: "1px solid rgba(0,209,255,0.3)",
-                      borderRadius: "5px",
-                      padding: "2px 7px",
-                      flexShrink: 0,
-                    }}
+            {draft.conditions.map((cond, ci) => {
+              const thOpt = THRESHOLD_TYPE_OPTS.find(o => o.value === cond.threshold_type) || THRESHOLD_TYPE_OPTS[0];
+              return (
+                <div
+                  key={ci}
+                  style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: ci < draft.conditions.length - 1 ? "10px" : 0, padding: "10px", background: "rgba(0,209,255,0.04)", borderRadius: "10px", border: "1px solid rgba(0,209,255,0.1)" }}
+                >
+                  {ci > 0 && (
+                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#00D1FF", background: "rgba(0,209,255,0.18)", border: "1px solid rgba(0,209,255,0.3)", borderRadius: "5px", padding: "2px 7px", flexShrink: 0 }}>VÀ</span>
+                  )}
+                  <span style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>Nếu</span>
+
+                  {/* Chọn cảm biến */}
+                  <select
+                    style={selectStyle}
+                    value={cond.sensor}
+                    onChange={(e) => setCondition(ci, "sensor", e.target.value)}
                   >
-                    VÀ
+                    {SENSOR_OPTS.map((s) => {
+                      const usedByOther = draft.conditions.some(
+                        (c, j) => j !== ci && c.sensor === s && c.threshold_type === cond.threshold_type,
+                      );
+                      return (
+                        <option key={s} value={s} disabled={usedByOther}>
+                          {SENSOR_LABEL[s]}{usedByOther ? " (đã dùng)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {/* UI Mới: Chữ hiển thị thay cho cụm chọn Max/Min cũ */}
+                  <span style={{ 
+                    fontSize: "0.85rem", fontWeight: 600, color: "#ef4444", 
+                    background: "rgba(239,68,68,0.1)", padding: "6px 12px", 
+                    borderRadius: "8px", border: "1px solid rgba(239,68,68,0.3)" 
+                  }}>
+                    vượt ngoài khoảng an toàn
                   </span>
-                )}
-                <span
-                  style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}
-                >
-                  Nếu
-                </span>
-                {/* CHANGE 5: chỉ hiển thị sensor chưa được chọn ở điều kiện khác */}
-                <select
-                  style={selectStyle}
-                  value={cond.sensor}
-                  onChange={(e) => setCondition(ci, "sensor", e.target.value)}
-                >
-                  {SENSOR_OPTS.map((s) => {
-                    const usedByOther = draft.conditions.some(
-                      (c, j) => j !== ci && c.sensor === s,
-                    );
-                    return (
-                      <option key={s} value={s} disabled={usedByOther}>
-                        {SENSOR_LABEL[s]}
-                        {usedByOther ? " (đã dùng)" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-                <select
-                  style={selectStyle}
-                  value={cond.op}
-                  onChange={(e) => setCondition(ci, "op", e.target.value)}
-                >
-                  {OP_OPTS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                {/* CHANGE 5: nút +/- cho giá trị điều kiện */}
-                <CondStepBtn
-                  onClick={() =>
-                    setCondition(
-                      ci,
-                      "value",
-                      Math.round((parseFloat(cond.value || 0) - 1) * 10) / 10,
-                    )
-                  }
-                >
-                  −
-                </CondStepBtn>
-                <input
-                  type="number"
-                  style={{
-                    ...inputStyle,
-                    width: "80px",
-                    textAlign: "center",
-                    fontWeight: 700,
-                  }}
-                  value={cond.value}
-                  onChange={(e) => setCondition(ci, "value", e.target.value)}
-                />
-                <CondStepBtn
-                  onClick={() =>
-                    setCondition(
-                      ci,
-                      "value",
-                      Math.round((parseFloat(cond.value || 0) + 1) * 10) / 10,
-                    )
-                  }
-                >
-                  +
-                </CondStepBtn>
-                {draft.conditions.length > 1 && (
-                  <button
-                    onClick={() => removeCondition(ci)}
-                    style={{
-                      padding: "5px 10px",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(234,67,53,0.3)",
-                      background: "rgba(234,67,53,0.08)",
-                      color: "var(--accent-red)",
-                      fontWeight: 700,
-                      fontSize: "0.82rem",
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
+
+                  {draft.conditions.length > 1 && (
+                    <button
+                      onClick={() => removeCondition(ci)}
+                      style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid rgba(234,67,53,0.3)", background: "rgba(234,67,53,0.08)", color: "var(--accent-red)", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", flexShrink: 0 }}
+                    >✕</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div
@@ -1564,43 +1421,19 @@ function AutoRuleTab({ addToast }) {
                     )}
 
                     {isFan && (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
+                      <select
+                        style={{ ...selectStyle, width: "120px" }}
+                        value={String(act.status)}
+                        onChange={(e) =>
+                          setAction(i, "status", parseFloat(e.target.value))
+                        }
                       >
-                        <ActStepBtn
-                          color="#a78bfa"
-                          onClick={() => {
-                            /* logic giảm mức quạt */
-                          }}
-                        >
-                          −
-                        </ActStepBtn>
-                        <select
-                          style={{ ...selectStyle, width: "110px" }}
-                          value={act.status}
-                          onChange={(e) =>
-                            setAction(i, "status", parseFloat(e.target.value))
-                          }
-                        >
-                          {FAN_LEVELS.map((l) => (
-                            <option key={l} value={l}>
-                              Mức {l}%
-                            </option>
-                          ))}
-                        </select>
-                        <ActStepBtn
-                          color="#a78bfa"
-                          onClick={() => {
-                            /* logic tăng mức quạt */
-                          }}
-                        >
-                          +
-                        </ActStepBtn>
-                      </div>
+                        {FAN_LEVELS.map((l) => (
+                          <option key={l} value={l}>
+                            {l === 0 ? "Tắt (0%)" : `Mức ${l}%`}
+                          </option>
+                        ))}
+                      </select>
                     )}
 
                     {/* Nút xóa thiết bị này khỏi kịch bản */}
@@ -1775,80 +1608,21 @@ function AutoRuleTab({ addToast }) {
                   }}
                 >
                   {conds.map((cond, ci) => {
-                    const opLabel =
-                      OP_OPTS.find((o) => o.value === cond?.op)?.label ||
-                      cond?.op;
-                    const cColor =
-                      { temp: "#FF9F43", humi: "#00D1FF", light: "#FFC107" }[
-                        cond?.sensor
-                      ] || "var(--accent-blue)";
+                    const cColor = { temp: "#FF9F43", humi: "#00D1FF", light: "#FFC107" }[cond?.sensor] || "var(--accent-blue)";
                     return (
                       <div
                         key={ci}
-                        style={{
-                          fontSize: "0.83rem",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          flexWrap: "wrap",
-                        }}
+                        style={{ fontSize: "0.83rem", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}
                       >
                         {ci > 0 && (
-                          <span
-                            style={{
-                              fontSize: "0.68rem",
-                              fontWeight: 800,
-                              color: "#00D1FF",
-                              background: "rgba(0,209,255,0.15)",
-                              border: "1px solid rgba(0,209,255,0.3)",
-                              borderRadius: "4px",
-                              padding: "1px 5px",
-                            }}
-                          >
-                            VÀ
-                          </span>
+                          <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#00D1FF", background: "rgba(0,209,255,0.15)", border: "1px solid rgba(0,209,255,0.3)", borderRadius: "4px", padding: "1px 5px" }}>VÀ</span>
                         )}
-                        <span style={{ color: "var(--text-secondary)" }}>
-                          Nếu
-                        </span>
-                        <span
-                          style={{
-                            background: `${cColor}18`,
-                            color: cColor,
-                            border: `1px solid ${cColor}44`,
-                            borderRadius: "6px",
-                            padding: "2px 8px",
-                            fontWeight: 700,
-                            fontSize: "0.8rem",
-                          }}
-                        >
+                        <span style={{ color: "var(--text-secondary)" }}>Nếu</span>
+                        <span style={{ background: `${cColor}18`, color: cColor, border: `1px solid ${cColor}44`, borderRadius: "6px", padding: "2px 8px", fontWeight: 700, fontSize: "0.8rem" }}>
                           {SENSOR_LABEL[cond?.sensor]}
                         </span>
-                        <span
-                          style={{
-                            background: "rgba(0,209,255,0.1)",
-                            color: "#00D1FF",
-                            border: "1px solid rgba(0,209,255,0.3)",
-                            borderRadius: "6px",
-                            padding: "2px 8px",
-                            fontWeight: 700,
-                            fontSize: "0.8rem",
-                          }}
-                        >
-                          {opLabel}
-                        </span>
-                        <span
-                          style={{
-                            background: "rgba(255,159,67,0.1)",
-                            color: "#FF9F43",
-                            border: "1px solid rgba(255,159,67,0.3)",
-                            borderRadius: "6px",
-                            padding: "2px 8px",
-                            fontWeight: 700,
-                            fontSize: "0.8rem",
-                          }}
-                        >
-                          {cond?.value}
+                        <span style={{ color: "#ef4444", fontWeight: 600, fontSize: "0.8rem", marginLeft: "2px" }}>
+                          vượt ngoài khoảng an toàn
                         </span>
                       </div>
                     );
