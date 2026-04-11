@@ -46,14 +46,13 @@ system_update_collection = db.System_update_log  # Bảng log cập nhật hệ 
 scenes_collection = db.Mode  # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
 init_module3(scene_manager)
-thresholds_collection = db.thresholds
-notif_channel_collection = db.notification_channels
 automation_rules_col = db.Scenario  # Ánh xạ sang bảng Scenario theo ERD
 house_col = db.House  # THÊM MỚI: đọc emailtowarning, teletowarning
-threshold_mgr = ThresholdManager(thresholds_collection)
-channel_mgr = NotificationChannelManager(notif_channel_collection, house_col)
-rule_mgr = AutomationRuleManager(automation_rules_col)
-alert_dispatcher = AlertDispatcher(danger_collection, notif_channel_collection)
+logupdate_collection = db.Logupdate
+threshold_mgr    = ThresholdManager(house_col, logupdate_collection)
+channel_mgr      = NotificationChannelManager(house_col)
+rule_mgr         = AutomationRuleManager(automation_rules_col, threshold_mgr)
+alert_dispatcher = AlertDispatcher(danger_collection, channel_mgr)
 
 init_module4(
     collection,
@@ -69,21 +68,12 @@ last_device_status = {item[0]: item[1] for item in shared_device_status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
-init_module2(
-    app,
-    threshold_mgr,
-    channel_mgr,
-    rule_mgr,
-    alert_dispatcher,
-    danger_collection,
-    notif_channel_collection,
-)
-app.state.device_status = shared_device_status
-app.state.is_danger_global = False
+init_module2(app, threshold_mgr, channel_mgr, rule_mgr,
+             alert_dispatcher, danger_collection)
+app.state.device_status      = shared_device_status
+app.state.is_danger_global   = False
 app.state.latest_sensor_data = {}
-# Thêm dòng này vào ngay dưới:
 app.state.last_pir_state = False
-
 app.include_router(module2_router)
 
 # --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
