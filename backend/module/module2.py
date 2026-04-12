@@ -289,6 +289,14 @@ class AutomationRuleManager:
             return {"ok": False, "message": "Mỗi cảm biến chỉ được xuất hiện một lần trong điều kiện."}
 
         return {"ok": True}
+    
+    @staticmethod
+    def _normalize_conditions(conditions: list) -> frozenset:
+        return frozenset(
+            frozenset(c.items())
+            for c in conditions
+            if c.get("sensor")
+    )
 
     async def _check_condition(self, cond: dict, sensor_data: dict, houseid: str) -> bool:
         sensor  = cond.get("sensor")
@@ -327,6 +335,22 @@ class AutomationRuleManager:
         check = self._validate_conditions(conditions)
         if not check["ok"]:
             return {"status": "error", "message": check["message"]}
+        
+        new_cond_sig = self._normalize_conditions(conditions)
+        existing_cursor = self.col.find({"houseid": houseid})
+        existing_rules  = await existing_cursor.to_list(length=200)
+
+        for existing in existing_rules:
+            existing_sig = self._normalize_conditions(existing.get("conditions", []))
+            if existing_sig == new_cond_sig:
+                return {
+                    "status": "error",
+                    "message": (
+                        f"Trùng điều kiện với kịch bản đã có: "
+                        f"'{existing.get('name')}'. "
+                        f"Mỗi tập điều kiện chỉ được dùng cho một kịch bản."
+                    )
+                }
 
         scenario_id = f"{houseid}_{name.replace(' ', '_')}"
         doc = {

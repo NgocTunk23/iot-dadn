@@ -957,6 +957,7 @@ const StatusPicker = ({ value, onChange, accentColor = '#10b981' }) => {
 };
 
 function AutoRuleTab({ addToast }) {
+  const [duplicateModal, setDuplicateModal] = useState(null);
   const [rules, setRules]       = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft]       = useState(EMPTY_RULE);
@@ -1009,14 +1010,32 @@ function AutoRuleTab({ addToast }) {
     setSaving(true);
     try {
       await axios.post(`${API}/automation-rules`, {
-        houseid: 'HS001', name: draft.name.trim(),
-        conditions: draft.conditions.map(c => ({ sensor: c.sensor })), // Gửi mỗi sensor
-        actions: draft.actions.map(a => ({ numberdevice: parseInt(a.numberdevice), status: serializeStatus(a.numberdevice, a.status) })),
+        houseid: "HS001",
+        name: draft.name.trim(),
+        conditions: draft.conditions.map((c) => ({ sensor: c.sensor })), // Gửi mỗi sensor
+        actions: draft.actions.map((a) => ({
+          numberdevice: parseInt(a.numberdevice),
+          status: serializeStatus(a.numberdevice, a.status),
+        })),
         enabled: draft.enabled,
       });
-      addToast(`✅ Đã lưu kịch bản "${draft.name}"!`, 'success');
-      setShowForm(false); fetchRules();
-    } catch (e) { addToast(e.response?.data?.message || 'Lỗi lưu kịch bản!', 'error'); }
+      addToast(`✅ Đã lưu kịch bản "${draft.name}"!`, "success");
+      setShowForm(false);
+      fetchRules();
+    } catch (e) {
+      const msg = e.response?.data?.message || "";
+      // Bắt lỗi trùng kịch bản từ backend
+      const match = msg.match(/Trùng điều kiện với kịch bản đã có: '(.+?)'/);
+      if (match) {
+        setDuplicateModal({
+          newName: draft.name.trim(),
+          conflictName: match[1],
+          sensors: draft.conditions.map((c) => c.sensor),
+        });
+      } else {
+        addToast(msg || "Lỗi lưu kịch bản!", "error");
+      }
+    }
     setSaving(false);
   };
 
@@ -1116,11 +1135,129 @@ function AutoRuleTab({ addToast }) {
     );
   };
 
+const SENSOR_LABEL = { temp: 'Nhiệt độ', humi: 'Độ ẩm', light: 'Ánh sáng' };
+const SENSOR_COLOR = {
+  temp:  { bg: 'rgba(255,159,67,0.12)', color: '#FF9F43', border: 'rgba(255,159,67,0.4)', icon: '🌡' },
+  humi:  { bg: 'rgba(0,209,255,0.10)',  color: '#00D1FF', border: 'rgba(0,209,255,0.35)', icon: '💧' },
+  light: { bg: 'rgba(255,193,7,0.10)',  color: '#FFC107', border: 'rgba(255,193,7,0.35)', icon: '☀' },
+};
+
+const DuplicateModal = ({ data, onClose }) => {
+  if (!data) return null;
+  const SensorTag = ({ sensor, delay = 0 }) => {
+    const s = SENSOR_COLOR[sensor] || {};
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: '5px',
+        padding: '4px 10px', borderRadius: '20px', fontSize: '0.73rem', fontWeight: 700,
+        background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+        letterSpacing: '0.02em',
+      }}>
+        {s.icon} {SENSOR_LABEL[sensor] || sensor}
+      </span>
+    );
+  };
+
+  const ConflictCard = ({ label, name, sensors, accent = false }) => (
+    <div style={{
+      background: accent
+        ? 'linear-gradient(135deg, rgba(167,139,250,0.14) 0%, rgba(139,92,246,0.08) 100%)'
+        : 'linear-gradient(135deg, rgba(167,139,250,0.08) 0%, rgba(139,92,246,0.04) 100%)',
+      border: `1px solid ${accent ? 'rgba(167,139,250,0.5)' : 'rgba(167,139,250,0.25)'}`,
+      borderRadius: '14px', padding: '14px 16px', position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{
+        position: 'absolute', left: 0, top: '10%', bottom: '10%',
+        width: '3px', background: 'linear-gradient(180deg, #a78bfa, rgba(124,58,237,0.27))',
+        borderRadius: '0 3px 3px 0',
+      }} />
+      <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: '0.96rem', fontWeight: 800, color: '#e2e8f0', marginBottom: '8px' }}>
+        {name}
+      </div>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {sensors.map(s => <SensorTag key={s} sensor={s} />)}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'linear-gradient(160deg, #1a1f2e 0%, #0f1520 100%)',
+        borderRadius: '24px',
+        border: '1px solid rgba(167,139,250,0.35)',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 60px rgba(167,139,250,0.08)',
+        padding: '36px 32px 28px', width: '420px', maxWidth: '94vw',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {/* Top glow line */}
+        <div style={{ position: 'absolute', top: 0, left: '12%', right: '12%', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent)' }} />
+
+        {/* Icon */}
+        <div style={{
+          width: '68px', height: '68px', margin: '0 auto 18px',
+          background: 'linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(139,92,246,0.1) 100%)',
+          border: '1.5px solid rgba(167,139,250,0.45)', borderRadius: '20px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '32px',
+        }}>⚡</div>
+
+        <div style={{ textAlign: 'center', fontSize: '0.74rem', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: '6px' }}>
+          Phát hiện xung đột
+        </div>
+        <div style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#e2e8f0', marginBottom: '18px' }}>
+          Bộ điều kiện bị trùng lặp!
+        </div>
+
+        <ConflictCard label="Kịch bản đang tạo" name={data.newName} sensors={data.sensors} />
+        <div style={{ textAlign: 'center', margin: '8px 0', color: '#4b5563', fontSize: '0.77rem', fontWeight: 700, letterSpacing: '0.04em' }}>↕ TRÙNG VỚI</div>
+        <ConflictCard label="Kịch bản đã tồn tại" name={data.conflictName} sensors={data.sensors} accent />
+
+        <div style={{
+          margin: '16px 0', fontSize: '0.84rem', lineHeight: 1.65, color: '#94a3b8',
+          textAlign: 'center', background: 'rgba(255,255,255,0.025)',
+          border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '11px 14px',
+        }}>
+          Vui lòng quay về{' '}
+          <span style={{ color: '#a78bfa', fontWeight: 700, background: 'rgba(167,139,250,0.12)', padding: '1px 6px', borderRadius: '6px' }}>
+            {data.conflictName}
+          </span>{' '}
+          để sửa hành động, tránh trùng lặp kịch bản gây mâu thuẫn điều khiển.
+        </div>
+
+        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)', marginBottom: '16px' }} />
+
+        <button onClick={onClose} style={{
+          width: '100%', padding: '13px 0',
+          background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
+          border: 'none', borderRadius: '13px', cursor: 'pointer',
+          fontSize: '0.92rem', fontWeight: 800, color: '#fff', letterSpacing: '0.03em',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          boxShadow: '0 4px 20px rgba(124,58,237,0.45)',
+          transition: 'all 0.2s',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(124,58,237,0.55)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.45)'; }}
+        >
+          ✓ Đã hiểu, quay lại chỉnh sửa
+        </button>
+      </div>
+    </div>
+  );
+};
+
   return (
     <>
       {/* CHANGE 5: Device Picker modal */}
       {showDevicePicker && <DevicePickerModal />}
-
+      {duplicateModal && <DuplicateModal data={duplicateModal} onClose={() => setDuplicateModal(null)} />}
       <div
         style={{
           display: "flex",
