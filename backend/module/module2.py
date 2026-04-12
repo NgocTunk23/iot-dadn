@@ -289,6 +289,14 @@ class AutomationRuleManager:
             return {"ok": False, "message": "Mỗi cảm biến chỉ được xuất hiện một lần trong điều kiện."}
 
         return {"ok": True}
+    
+    @staticmethod
+    def _normalize_conditions(conditions: list) -> frozenset:
+        return frozenset(
+            frozenset(c.items())
+            for c in conditions
+            if c.get("sensor")
+    )
 
     async def _check_condition(self, cond: dict, sensor_data: dict, houseid: str) -> bool:
         sensor  = cond.get("sensor")
@@ -316,7 +324,8 @@ class AutomationRuleManager:
 
     async def add_rule(self, houseid: str, name: str,
                         conditions: list, actions: list,
-                        enabled: bool = True) -> dict:
+                        enabled: bool = True, force: bool = False,
+                        original_name: str = None, original_id: str = None) -> dict: # <--- Thêm original_id
         if not name:
             return {"status": "error", "message": "Thiếu tên kịch bản."}
         if not actions:
@@ -327,21 +336,67 @@ class AutomationRuleManager:
         check = self._validate_conditions(conditions)
         if not check["ok"]:
             return {"status": "error", "message": check["message"]}
+        
+        # ID chuẩn bị tạo mới hoặc ghi đè
+        scenario_id = f"{houseid}_{name.strip().replace(' ', '_')}"
+        
+        # ── 1. KIỂM TRA TRÙNG TÊN ────────────────────────────────────
+        if not force:
+            # Chỉ báo trùng nếu tên này thuộc về một ID KHÁC với ID đang sửa
+            if not original_id or scenario_id != original_id:
+                existing = await self.col.find_one({"_id": scenario_id})
+                if existing:
+                    return {
+                        "status": "error",
+                        "code": "DUPLICATE_NAME",
+                        "message": f"Tên kịch bản '{name}' đã tồn tại.",
+                        "existing_name": existing.get("name"),
+                    }
 
-        scenario_id = f"{houseid}_{name.replace(' ', '_')}"
+        # ── 2. KIỂM TRA TRÙNG ĐIỀU KIỆN ──────────────────────────────
+        new_cond_sig = self._normalize_conditions(conditions)
+        existing_cursor = self.col.find({"houseid": houseid})
+        existing_rules  = await existing_cursor.to_list(length=200)
+
+        for ex in existing_rules:
+            if original_id and str(ex.get("_id")) == str(original_id):
+                continue 
+            if force and str(ex.get("_id")) == scenario_id:
+                continue
+
+            ex_name = ex.get("name", "").strip().lower()
+            if original_name and ex_name == original_name.strip().lower():
+                continue
+            if ex_name == name.strip().lower():
+                continue
+
+            existing_sig = self._normalize_conditions(ex.get("conditions", []))
+            if existing_sig == new_cond_sig:
+                    return {
+                        "status": "error",
+                        "code": "DUPLICATE_CONDITIONS",
+                        "message": f"Trùng điều kiện với kịch bản đã có: '{ex.get('name')}'.",
+                        "conflict_name": ex.get("name"),
+                    }
+                
+        if original_id and str(original_id) != scenario_id:
+            await self.col.delete_one({"_id": original_id})
+
+        # ── 4. LƯU VÀO DATABASE ──────────────────────────────────────
         doc = {
             "_id":        scenario_id,
             "scenarioid": scenario_id,
             "houseid":    houseid,
-            "name":       name,
-            "conditions": conditions,   # [{ sensor, threshold_type }]
+            "name":       name.strip(),
+            "conditions": conditions,
             "action":     actions,
             "isactive":   enabled,
             "createdat":  datetime.now(VN_TZ).replace(tzinfo=None),
         }
         await self.col.update_one({"_id": scenario_id}, {"$set": doc}, upsert=True)
+        
         return {"status": "success",
-                "message": "Tạo kịch bản thành công.",
+                "message": "Tạo/Cập nhật kịch bản thành công.",
                 "scenarioid": scenario_id}
 
     async def delete_rule(self, houseid: str, name: str) -> dict:
@@ -732,8 +787,10 @@ async def create_automation_rule(request: Request, payload: dict = Body(...)):
     conditions = payload.get("conditions", [])
     actions    = payload.get("actions") or payload.get("action")
     enabled    = payload.get("enabled", payload.get("isactive", True))
-
-    res = await mgr.add_rule(houseid, name, conditions, actions, enabled)
+    force      = payload.get("force", False)
+    original_name = payload.get("original_name")
+    original_id   = payload.get("original_id") 
+    res = await mgr.add_rule(houseid, name, conditions, actions, enabled, force=force, original_name=original_name, original_id=original_id)
     if res["status"] == "error":
         return JSONResponse(status_code=400, content=res)
     return res
