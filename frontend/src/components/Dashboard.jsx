@@ -268,15 +268,8 @@ export default function Dashboard({ data }) {
   useEffect(() => {
     const fetchComparison = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/sensor-data`);
-        const d = res.data;
-
-        // Tính delta so với baseline
-        setComparison({
-          temp: { delta: +(d.temp - 28).toFixed(1), label: "So với ngưỡng cơ sở" },
-          humi: { delta: +(d.humi - 65).toFixed(1), label: "So với ngưỡng cơ sở" },
-          light: { delta: +(d.light - 50).toFixed(1), label: "So với ngưỡng cơ sở" },
-        });
+        const res = await axios.get(`${API_BASE}/sensor-comparison`);
+        setComparison(res.data);
       } catch {
         setComparison({
           temp: { delta: 1.2, label: 'So với trung bình ngày' },
