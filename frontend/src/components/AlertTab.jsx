@@ -5,6 +5,25 @@ const API = 'http://localhost:5000/api';
 
 /* ─────────────────── GLOBAL KEYFRAME STYLES ─────────────────── */
 const GLOBAL_CSS = `
+@keyframes replaceSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.replace-spin-g {
+  animation: replaceSpin 2s linear infinite;
+  transform-origin: 12px 12px; /* Khóa tâm chuẩn như icon bánh răng cũ */
+}
+
+/* --- HIỆU ỨNG VIẾT CHO NÚT CÂY BÚT --- */
+@keyframes penScribble {
+  0%, 100% { transform: rotate(0deg); }
+  25%      { transform: rotate(-10deg); }
+  75%      { transform: rotate(8deg); }
+}
+.pen-scribble-g {
+  animation: penScribble 1.2s ease-in-out infinite;
+  transform-origin: 3px 21px; /* Khóa tâm xoay ở ngay ngòi bút */
+}
 @keyframes thermoPulse {
   0%,100% { height: 28px; }
   50%      { height: 34px; }
@@ -203,6 +222,33 @@ const ResetIconSVG = ({ size = 16, color = '#ef4444' }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
     <path d="M3 3v5h5" />
+  </svg>
+);
+
+const ReplaceIconSVG = ({ size = 24 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <defs>
+      <linearGradient id="replaceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#00D1FF" />
+        <stop offset="100%" stopColor="#fbbf24" />
+      </linearGradient>
+    </defs>
+    {/* Thẻ g này sẽ xoay liên tục dựa vào CSS, không bao giờ bị re-render giật lại */}
+    <g className="replace-spin-g">
+      <path d="M21 2v6h-6" stroke="#00D1FF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" stroke="url(#replaceGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 22v-6h6" stroke="#fbbf24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" stroke="url(#replaceGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </g>
+  </svg>
+);
+
+const PenIconSVG = ({ size = 24, color = "#94a3b8" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <g className="pen-scribble-g">
+      <path d="M12 20h9" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </g>
   </svg>
 );
 
@@ -958,10 +1004,12 @@ const StatusPicker = ({ value, onChange, accentColor = '#10b981' }) => {
 
 function AutoRuleTab({ addToast }) {
   const [duplicateModal, setDuplicateModal] = useState(null);
+  const [duplicateNameModal, setDuplicateNameModal] = useState(null);
   const [rules, setRules]       = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft]       = useState(EMPTY_RULE);
   const [editName, setEditName] = useState(null);
+  const [editId, setEditId]     = useState(null);
   const [saving, setSaving]     = useState(false);
   /* CHANGE 5: state cho Device Picker popup */
   const [showDevicePicker, setShowDevicePicker] = useState(false);
@@ -978,7 +1026,7 @@ function AutoRuleTab({ addToast }) {
     return () => clearInterval(timer);
   }, [fetchRules]);
 
-  const openCreate = () => { setDraft(JSON.parse(JSON.stringify(EMPTY_RULE))); setEditName(null); setShowForm(true); };
+  const openCreate = () => { setDraft(JSON.parse(JSON.stringify(EMPTY_RULE))); setEditName(null); setEditId(null); setShowForm(true); };
   const openEdit = (rule) => {
     // Tương thích với dữ liệu cũ, chỉ bóc lấy 'sensor'
     const conds = (rule.conditions && rule.conditions.length > 0)
@@ -988,7 +1036,7 @@ function AutoRuleTab({ addToast }) {
       name: rule.name, enabled: rule.enabled, conditions: conds,
       actions: (rule.actions || rule.action || []).map(a => ({ numberdevice: parseInt(a.numberdevice), status: a.status }))
     });
-    setEditName(rule.name); setShowForm(true);
+    setEditName(rule.name); setEditId(rule._id); setShowForm(true);
   };
 
   const serializeStatus = (devId, status) => {
@@ -1012,6 +1060,8 @@ function AutoRuleTab({ addToast }) {
       await axios.post(`${API}/automation-rules`, {
         houseid: "HS001",
         name: draft.name.trim(),
+        original_name: editName,
+        original_id: editId,
         conditions: draft.conditions.map((c) => ({ sensor: c.sensor })), // Gửi mỗi sensor
         actions: draft.actions.map((a) => ({
           numberdevice: parseInt(a.numberdevice),
@@ -1023,22 +1073,47 @@ function AutoRuleTab({ addToast }) {
       setShowForm(false);
       fetchRules();
     } catch (e) {
-      const msg = e.response?.data?.message || "";
-      // Bắt lỗi trùng kịch bản từ backend
-      const match = msg.match(/Trùng điều kiện với kịch bản đã có: '(.+?)'/);
-      if (match) {
+      const data = e.response?.data || {};
+      if (data.code === "DUPLICATE_NAME") {
+        setDuplicateNameModal({ existingName: data.existing_name });
+      } else if (data.code === "DUPLICATE_CONDITIONS") {
         setDuplicateModal({
           newName: draft.name.trim(),
-          conflictName: match[1],
+          conflictName: data.conflict_name,
           sensors: draft.conditions.map((c) => c.sensor),
         });
       } else {
-        addToast(msg || "Lỗi lưu kịch bản!", "error");
+        addToast(data.message || "Lỗi lưu kịch bản!", "error");
       }
     }
     setSaving(false);
   };
-
+  
+  const handleForceReplace = async () => {
+    setDuplicateNameModal(null);
+    setSaving(true);
+    try {
+      await axios.post(`${API}/automation-rules`, {
+        houseid: "HS001",
+        name: draft.name.trim(),
+        original_name: editName,
+        original_id: editId,
+        conditions: draft.conditions.map((c) => ({ sensor: c.sensor })),
+        actions: draft.actions.map((a) => ({
+          numberdevice: parseInt(a.numberdevice),
+          status: serializeStatus(a.numberdevice, a.status),
+        })),
+        enabled: draft.enabled,
+        force: true, // ← gửi force=true để backend bỏ qua check trùng tên
+      });
+      addToast(`✅ Đã thay thế kịch bản "${draft.name}"!`, "success");
+      setShowForm(false);
+      fetchRules();
+    } catch (e) {
+      addToast(e.response?.data?.message || "Lỗi thay thế kịch bản!", "error");
+    }
+    setSaving(false);
+  };
 
   const handleDelete = async (name) => {
     if (!window.confirm(`Xóa kịch bản "${name}"?`)) return;
@@ -1135,129 +1210,318 @@ function AutoRuleTab({ addToast }) {
     );
   };
 
-const SENSOR_LABEL = { temp: 'Nhiệt độ', humi: 'Độ ẩm', light: 'Ánh sáng' };
-const SENSOR_COLOR = {
-  temp:  { bg: 'rgba(255,159,67,0.12)', color: '#FF9F43', border: 'rgba(255,159,67,0.4)', icon: '🌡' },
-  humi:  { bg: 'rgba(0,209,255,0.10)',  color: '#00D1FF', border: 'rgba(0,209,255,0.35)', icon: '💧' },
-  light: { bg: 'rgba(255,193,7,0.10)',  color: '#FFC107', border: 'rgba(255,193,7,0.35)', icon: '☀' },
-};
+ // ─── 3 helper components dùng trong modal, đặt trong AutoRuleTab để dùng closure ───
 
-const DuplicateModal = ({ data, onClose }) => {
-  if (!data) return null;
-  const SensorTag = ({ sensor, delay = 0 }) => {
-    const s = SENSOR_COLOR[sensor] || {};
+  const SensorTag = ({ sensor }) => {
+    const SC = {
+      temp:  { bg: 'rgba(255,159,67,0.12)', color: '#FF9F43', border: 'rgba(255,159,67,0.4)',  icon: '🌡' },
+      humi:  { bg: 'rgba(0,209,255,0.10)',  color: '#00D1FF', border: 'rgba(0,209,255,0.35)',  icon: '💧' },
+      light: { bg: 'rgba(255,193,7,0.10)',  color: '#FFC107', border: 'rgba(255,193,7,0.35)',  icon: '☀'  },
+    };
+    const SL = { temp: 'Nhiệt độ', humi: 'Độ ẩm', light: 'Ánh sáng' };
+    const s = SC[sensor] || {};
     return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: '5px',
-        padding: '4px 10px', borderRadius: '20px', fontSize: '0.73rem', fontWeight: 700,
-        background: s.bg, color: s.color, border: `1px solid ${s.border}`,
-        letterSpacing: '0.02em',
-      }}>
-        {s.icon} {SENSOR_LABEL[sensor] || sensor}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', fontSize: '0.73rem', fontWeight: 700, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>
+        {s.icon} {SL[sensor] || sensor}
       </span>
     );
   };
 
   const ConflictCard = ({ label, name, sensors, accent = false }) => (
-    <div style={{
-      background: accent
-        ? 'linear-gradient(135deg, rgba(167,139,250,0.14) 0%, rgba(139,92,246,0.08) 100%)'
-        : 'linear-gradient(135deg, rgba(167,139,250,0.08) 0%, rgba(139,92,246,0.04) 100%)',
-      border: `1px solid ${accent ? 'rgba(167,139,250,0.5)' : 'rgba(167,139,250,0.25)'}`,
-      borderRadius: '14px', padding: '14px 16px', position: 'relative', overflow: 'hidden',
-    }}>
-      <div style={{
-        position: 'absolute', left: 0, top: '10%', bottom: '10%',
-        width: '3px', background: 'linear-gradient(180deg, #a78bfa, rgba(124,58,237,0.27))',
-        borderRadius: '0 3px 3px 0',
-      }} />
-      <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: '6px' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: '0.96rem', fontWeight: 800, color: '#e2e8f0', marginBottom: '8px' }}>
-        {name}
-      </div>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-        {sensors.map(s => <SensorTag key={s} sensor={s} />)}
-      </div>
+    <div style={{ background: accent ? 'linear-gradient(135deg, rgba(167,139,250,0.14) 0%, rgba(139,92,246,0.08) 100%)' : 'linear-gradient(135deg, rgba(167,139,250,0.08) 0%, rgba(139,92,246,0.04) 100%)', border: `1px solid ${accent ? 'rgba(167,139,250,0.5)' : 'rgba(167,139,250,0.25)'}`, borderRadius: '14px', padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', left: 0, top: '10%', bottom: '10%', width: '3px', background: 'linear-gradient(180deg, #a78bfa, rgba(124,58,237,0.27))', borderRadius: '0 3px 3px 0' }} />
+      <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
+      <div style={{ fontSize: '0.96rem', fontWeight: 800, color: '#e2e8f0', marginBottom: '8px' }}>{name}</div>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>{sensors.map(s => <SensorTag key={s} sensor={s} />)}</div>
     </div>
   );
 
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'linear-gradient(160deg, #1a1f2e 0%, #0f1520 100%)',
-        borderRadius: '24px',
-        border: '1px solid rgba(167,139,250,0.35)',
-        boxShadow: '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 60px rgba(167,139,250,0.08)',
-        padding: '36px 32px 28px', width: '420px', maxWidth: '94vw',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        {/* Top glow line */}
-        <div style={{ position: 'absolute', top: 0, left: '12%', right: '12%', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent)' }} />
-
-        {/* Icon */}
-        <div style={{
-          width: '68px', height: '68px', margin: '0 auto 18px',
-          background: 'linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(139,92,246,0.1) 100%)',
-          border: '1.5px solid rgba(167,139,250,0.45)', borderRadius: '20px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '32px',
-        }}>⚡</div>
-
-        <div style={{ textAlign: 'center', fontSize: '0.74rem', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: '6px' }}>
-          Phát hiện xung đột
+  const DuplicateCondModal = ({ data, onClose }) => {
+    if (!data) return null;
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+        <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(160deg, #1a1f2e 0%, #0f1520 100%)', borderRadius: '24px', border: '1px solid rgba(167,139,250,0.35)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)', padding: '36px 32px 28px', width: '420px', maxWidth: '94vw', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: '12%', right: '12%', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent)' }} />
+          <div style={{ width: '68px', height: '68px', margin: '0 auto 18px', background: 'linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(139,92,246,0.1) 100%)', border: '1.5px solid rgba(167,139,250,0.45)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>⚡</div>
+          <div style={{ textAlign: 'center', fontSize: '0.74rem', fontWeight: 700, color: '#a78bfa', letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: '6px' }}>Phát hiện xung đột</div>
+          <div style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#e2e8f0', marginBottom: '18px' }}>Bộ điều kiện bị trùng lặp!</div>
+          <ConflictCard label="Kịch bản đang tạo" name={data.newName} sensors={data.sensors} />
+          <div style={{ textAlign: 'center', margin: '8px 0', color: '#4b5563', fontSize: '0.77rem', fontWeight: 700 }}>↕ TRÙNG VỚI</div>
+          <ConflictCard label="Kịch bản đã tồn tại" name={data.conflictName} sensors={data.sensors} accent />
+          <div style={{ margin: '16px 0', fontSize: '0.84rem', lineHeight: 1.65, color: '#94a3b8', textAlign: 'center', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '11px 14px' }}>
+            Vui lòng quay về <span style={{ color: '#a78bfa', fontWeight: 700, background: 'rgba(167,139,250,0.12)', padding: '1px 6px', borderRadius: '6px' }}>{data.conflictName}</span> để sửa hành động, tránh trùng lặp kịch bản gây mâu thuẫn điều khiển.
+          </div>
+          <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)', marginBottom: '16px' }} />
+          <button onClick={onClose} style={{ width: '100%', padding: '13px 0', background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)', border: 'none', borderRadius: '13px', cursor: 'pointer', fontSize: '0.92rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 20px rgba(124,58,237,0.45)' }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
+          >✓ Đã hiểu, quay lại chỉnh sửa</button>
         </div>
-        <div style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#e2e8f0', marginBottom: '18px' }}>
-          Bộ điều kiện bị trùng lặp!
-        </div>
+      </div>
+    );
+  };
 
-        <ConflictCard label="Kịch bản đang tạo" name={data.newName} sensors={data.sensors} />
-        <div style={{ textAlign: 'center', margin: '8px 0', color: '#4b5563', fontSize: '0.77rem', fontWeight: 700, letterSpacing: '0.04em' }}>↕ TRÙNG VỚI</div>
-        <ConflictCard label="Kịch bản đã tồn tại" name={data.conflictName} sensors={data.sensors} accent />
-
-        <div style={{
-          margin: '16px 0', fontSize: '0.84rem', lineHeight: 1.65, color: '#94a3b8',
-          textAlign: 'center', background: 'rgba(255,255,255,0.025)',
-          border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '11px 14px',
-        }}>
-          Vui lòng quay về{' '}
-          <span style={{ color: '#a78bfa', fontWeight: 700, background: 'rgba(167,139,250,0.12)', padding: '1px 6px', borderRadius: '6px' }}>
-            {data.conflictName}
-          </span>{' '}
-          để sửa hành động, tránh trùng lặp kịch bản gây mâu thuẫn điều khiển.
-        </div>
-
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)', marginBottom: '16px' }} />
-
-        <button onClick={onClose} style={{
-          width: '100%', padding: '13px 0',
-          background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
-          border: 'none', borderRadius: '13px', cursor: 'pointer',
-          fontSize: '0.92rem', fontWeight: 800, color: '#fff', letterSpacing: '0.03em',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-          boxShadow: '0 4px 20px rgba(124,58,237,0.45)',
-          transition: 'all 0.2s',
+  const DuplicateNameModal = ({ data, onReplace, onRename }) => {
+    if (!data) return null;
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 9999,
+          background: "rgba(0,0,0,0.65)",
+          backdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(124,58,237,0.55)'; }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.45)'; }}
+        onClick={onRename}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: "linear-gradient(160deg, #1a1f2e 0%, #0f1520 100%)",
+            borderRadius: "24px",
+            border: "1px solid rgba(251,191,36,0.35)",
+            boxShadow:
+              "0 32px 80px rgba(0,0,0,0.6), 0 0 60px rgba(251,191,36,0.06)",
+            padding: "36px 32px 28px",
+            width: "420px",
+            maxWidth: "94vw",
+            position: "relative",
+            overflow: "hidden",
+          }}
         >
-          ✓ Đã hiểu, quay lại chỉnh sửa
-        </button>
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: "12%",
+              right: "12%",
+              height: "1px",
+              background:
+                "linear-gradient(90deg, transparent, rgba(251,191,36,0.7), transparent)",
+            }}
+          />
+          <div
+            style={{
+              width: "68px",
+              height: "68px",
+              margin: "0 auto 18px",
+              background:
+                "linear-gradient(135deg, rgba(251,191,36,0.16) 0%, rgba(245,158,11,0.08) 100%)",
+              border: "1.5px solid rgba(251,191,36,0.45)",
+              borderRadius: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "32px",
+            }}
+          >
+            📋
+          </div>
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: "0.74rem",
+              fontWeight: 700,
+              color: "#fbbf24",
+              letterSpacing: "0.09em",
+              textTransform: "uppercase",
+              marginBottom: "6px",
+            }}
+          >
+            Trùng tên kịch bản
+          </div>
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: "1.08rem",
+              fontWeight: 800,
+              color: "#e2e8f0",
+              marginBottom: "18px",
+              lineHeight: 1.4,
+            }}
+          >
+            Tên này đã được dùng trước đó!
+          </div>
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(245,158,11,0.05) 100%)",
+              border: "1px solid rgba(251,191,36,0.3)",
+              borderRadius: "14px",
+              padding: "14px 16px",
+              marginBottom: "16px",
+              position: "relative",
+              overflow: "hidden",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: "10%",
+                bottom: "10%",
+                width: "3px",
+                background:
+                  "linear-gradient(180deg, #fbbf24, rgba(245,158,11,0.27))",
+                borderRadius: "0 3px 3px 0",
+              }}
+            />
+            <div style={{ flex: 1 }}>
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  color: "#fbbf24",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  marginBottom: "4px",
+                }}
+              >
+                Kịch bản đã tồn tại
+              </div>
+              <div
+                style={{ fontSize: "1rem", fontWeight: 800, color: "#e2e8f0" }}
+              >
+                {data.existingName}
+              </div>
+            </div>
+            <div style={{ fontSize: "28px", opacity: 0.6 }}>⚠️</div>
+          </div>
+          <div
+            style={{
+              fontSize: "0.84rem",
+              lineHeight: 1.65,
+              color: "#94a3b8",
+              textAlign: "center",
+              background: "rgba(255,255,255,0.025)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderRadius: "10px",
+              padding: "11px 14px",
+              marginBottom: "20px",
+            }}
+          >
+            Kịch bản của bạn có tên trùng với{" "}
+            <span
+              style={{
+                color: "#fbbf24",
+                fontWeight: 700,
+                background: "rgba(251,191,36,0.12)",
+                padding: "1px 6px",
+                borderRadius: "6px",
+              }}
+            >
+              {data.existingName}
+            </span>{" "}
+            đã tạo trước đó.
+            <br />
+            Xác nhận <strong style={{ color: "#e2e8f0" }}>
+              thay thế
+            </strong> hoặc{" "}
+            <strong style={{ color: "#e2e8f0" }}>đổi lại tên mới</strong> để
+            tiếp tục.
+          </div>
+          <div
+            style={{
+              height: "1px",
+              background:
+                "linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)",
+              marginBottom: "16px",
+            }}
+          />
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              onClick={onRename}
+              style={{
+                flex: 1,
+                padding: "12px 0",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "13px",
+                cursor: "pointer",
+                fontSize: "0.88rem",
+                fontWeight: 700,
+                color: "#94a3b8",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "7px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,0.09)";
+                e.currentTarget.style.color = "#e2e8f0";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                e.currentTarget.style.color = "#94a3b8";
+              }}
+            >
+              <PenIconSVG size={18} color="currentColor" /> Đổi tên mới
+            </button>
+            <button
+              onClick={onReplace}
+              style={{
+                flex: 1,
+                padding: "12px 0",
+                background: "linear-gradient(135deg, #b45309 0%, #fbbf24 100%)",
+                border: "none",
+                borderRadius: "13px",
+                cursor: "pointer",
+                fontSize: "0.88rem",
+                fontWeight: 800,
+                color: "#1a1100",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "7px",
+                boxShadow: "0 4px 18px rgba(251,191,36,0.35)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow =
+                  "0 8px 26px rgba(251,191,36,0.52)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "none";
+                e.currentTarget.style.boxShadow =
+                  "0 4px 18px rgba(251,191,36,0.35)";
+              }}
+            >
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <ReplaceIconSVG size={18} />
+                <span>Thay thế</span>
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   return (
     <>
       {/* CHANGE 5: Device Picker modal */}
       {showDevicePicker && <DevicePickerModal />}
-      {duplicateModal && <DuplicateModal data={duplicateModal} onClose={() => setDuplicateModal(null)} />}
+      {duplicateModal && (
+        <DuplicateCondModal
+          data={duplicateModal}
+          onClose={() => setDuplicateModal(null)}
+        />
+      )}
+      {duplicateNameModal && (
+        <DuplicateNameModal
+          data={duplicateNameModal}
+          onReplace={handleForceReplace}
+          onRename={() => setDuplicateNameModal(null)}
+        />
+      )}
       <div
         style={{
           display: "flex",
@@ -1314,25 +1578,73 @@ const DuplicateModal = ({ data, onClose }) => {
           {/* Điều kiện kích hoạt – chọn sensor + threshold_type, không nhập số */}
           <div
             style={{
-              background: "linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)",
+              background:
+                "linear-gradient(135deg, rgba(0,209,255,0.06) 0%, var(--bg-card-inner) 100%)",
               borderRadius: "12px",
               padding: "16px",
               marginBottom: "16px",
               border: "1px solid rgba(0,209,255,0.15)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-              <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#00D1FF", letterSpacing: "0.06em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ width: "3px", height: "14px", background: "#00D1FF", borderRadius: "2px", boxShadow: "0 0 6px #00D1FF88", display: "inline-block" }} />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  color: "#00D1FF",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "3px",
+                    height: "14px",
+                    background: "#00D1FF",
+                    borderRadius: "2px",
+                    boxShadow: "0 0 6px #00D1FF88",
+                    display: "inline-block",
+                  }}
+                />
                 <RadarIconSVG size={14} color="#00D1FF" /> Điều kiện kích hoạt
-                <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                <span
+                  style={{
+                    fontSize: "0.7rem",
+                    color: "var(--text-secondary)",
+                    fontWeight: 400,
+                    textTransform: "none",
+                    letterSpacing: 0,
+                  }}
+                >
                   (ngưỡng lấy từ cấu hình ngưỡng)
                 </span>
               </div>
               {draft.conditions.length < 3 && (
                 <button
                   onClick={addCondition}
-                  style={{ padding: "5px 12px", borderRadius: "8px", border: "1.5px solid rgba(0,209,255,0.4)", background: "rgba(0,209,255,0.1)", color: "#00D1FF", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "8px",
+                    border: "1.5px solid rgba(0,209,255,0.4)",
+                    background: "rgba(0,209,255,0.1)",
+                    color: "#00D1FF",
+                    fontWeight: 700,
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
                 >
                   + Thêm điều kiện
                 </button>
@@ -1340,16 +1652,49 @@ const DuplicateModal = ({ data, onClose }) => {
             </div>
 
             {draft.conditions.map((cond, ci) => {
-              const thOpt = THRESHOLD_TYPE_OPTS.find(o => o.value === cond.threshold_type) || THRESHOLD_TYPE_OPTS[0];
+              const thOpt =
+                THRESHOLD_TYPE_OPTS.find(
+                  (o) => o.value === cond.threshold_type,
+                ) || THRESHOLD_TYPE_OPTS[0];
               return (
                 <div
                   key={ci}
-                  style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: ci < draft.conditions.length - 1 ? "10px" : 0, padding: "10px", background: "rgba(0,209,255,0.04)", borderRadius: "10px", border: "1px solid rgba(0,209,255,0.1)" }}
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    marginBottom: ci < draft.conditions.length - 1 ? "10px" : 0,
+                    padding: "10px",
+                    background: "rgba(0,209,255,0.04)",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(0,209,255,0.1)",
+                  }}
                 >
                   {ci > 0 && (
-                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#00D1FF", background: "rgba(0,209,255,0.18)", border: "1px solid rgba(0,209,255,0.3)", borderRadius: "5px", padding: "2px 7px", flexShrink: 0 }}>VÀ</span>
+                    <span
+                      style={{
+                        fontSize: "0.7rem",
+                        fontWeight: 800,
+                        color: "#00D1FF",
+                        background: "rgba(0,209,255,0.18)",
+                        border: "1px solid rgba(0,209,255,0.3)",
+                        borderRadius: "5px",
+                        padding: "2px 7px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      VÀ
+                    </span>
                   )}
-                  <span style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>Nếu</span>
+                  <span
+                    style={{
+                      color: "var(--text-secondary)",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    Nếu
+                  </span>
 
                   {/* Chọn cảm biến */}
                   <select
@@ -1359,30 +1704,52 @@ const DuplicateModal = ({ data, onClose }) => {
                   >
                     {SENSOR_OPTS.map((s) => {
                       const usedByOther = draft.conditions.some(
-                        (c, j) => j !== ci && c.sensor === s && c.threshold_type === cond.threshold_type,
+                        (c, j) =>
+                          j !== ci &&
+                          c.sensor === s &&
+                          c.threshold_type === cond.threshold_type,
                       );
                       return (
                         <option key={s} value={s} disabled={usedByOther}>
-                          {SENSOR_LABEL[s]}{usedByOther ? " (đã dùng)" : ""}
+                          {SENSOR_LABEL[s]}
+                          {usedByOther ? " (đã dùng)" : ""}
                         </option>
                       );
                     })}
                   </select>
 
                   {/* UI Mới: Chữ hiển thị thay cho cụm chọn Max/Min cũ */}
-                  <span style={{ 
-                    fontSize: "0.85rem", fontWeight: 600, color: "#ef4444", 
-                    background: "rgba(239,68,68,0.1)", padding: "6px 12px", 
-                    borderRadius: "8px", border: "1px solid rgba(239,68,68,0.3)" 
-                  }}>
+                  <span
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      color: "#ef4444",
+                      background: "rgba(239,68,68,0.1)",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid rgba(239,68,68,0.3)",
+                    }}
+                  >
                     vượt ngoài khoảng an toàn
                   </span>
 
                   {draft.conditions.length > 1 && (
                     <button
                       onClick={() => removeCondition(ci)}
-                      style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid rgba(234,67,53,0.3)", background: "rgba(234,67,53,0.08)", color: "var(--accent-red)", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", flexShrink: 0 }}
-                    >✕</button>
+                      style={{
+                        padding: "5px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(234,67,53,0.3)",
+                        background: "rgba(234,67,53,0.08)",
+                        color: "var(--accent-red)",
+                        fontWeight: 700,
+                        fontSize: "0.82rem",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✕
+                    </button>
                   )}
                 </div>
               );
@@ -1481,8 +1848,7 @@ const DuplicateModal = ({ data, onClose }) => {
                     margin: 0,
                   }}
                 >
-                  Chưa có thiết bị nào. Nhấn <b>"+ Thêm thiết bị"</b> để
-                  chọn.
+                  Chưa có thiết bị nào. Nhấn <b>"+ Thêm thiết bị"</b> để chọn.
                 </p>
               </div>
             ) : (
@@ -1717,20 +2083,22 @@ const DuplicateModal = ({ data, onClose }) => {
                     label={rule.enabled ? "Đang bật" : "Tắt"}
                   />
                   {isRunning && (
-                    <span style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontSize: "0.72rem",
-                      fontWeight: 800,
-                      color: sColor,
-                      background: `${sColor}20`,
-                      border: `1px solid ${sColor}55`,
-                      borderRadius: "20px",
-                      padding: "2px 10px",
-                      letterSpacing: "0.04em",
-                      animation: "boltFlicker 1.6s ease-in-out infinite",
-                    }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontSize: "0.72rem",
+                        fontWeight: 800,
+                        color: sColor,
+                        background: `${sColor}20`,
+                        border: `1px solid ${sColor}55`,
+                        borderRadius: "20px",
+                        padding: "2px 10px",
+                        letterSpacing: "0.04em",
+                        animation: "boltFlicker 1.6s ease-in-out infinite",
+                      }}
+                    >
                       ⚡ ĐANG CHẠY
                     </span>
                   )}
@@ -1745,20 +2113,60 @@ const DuplicateModal = ({ data, onClose }) => {
                   }}
                 >
                   {conds.map((cond, ci) => {
-                    const cColor = { temp: "#FF9F43", humi: "#00D1FF", light: "#FFC107" }[cond?.sensor] || "var(--accent-blue)";
+                    const cColor =
+                      { temp: "#FF9F43", humi: "#00D1FF", light: "#FFC107" }[
+                        cond?.sensor
+                      ] || "var(--accent-blue)";
                     return (
                       <div
                         key={ci}
-                        style={{ fontSize: "0.83rem", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}
+                        style={{
+                          fontSize: "0.83rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                        }}
                       >
                         {ci > 0 && (
-                          <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#00D1FF", background: "rgba(0,209,255,0.15)", border: "1px solid rgba(0,209,255,0.3)", borderRadius: "4px", padding: "1px 5px" }}>VÀ</span>
+                          <span
+                            style={{
+                              fontSize: "0.68rem",
+                              fontWeight: 800,
+                              color: "#00D1FF",
+                              background: "rgba(0,209,255,0.15)",
+                              border: "1px solid rgba(0,209,255,0.3)",
+                              borderRadius: "4px",
+                              padding: "1px 5px",
+                            }}
+                          >
+                            VÀ
+                          </span>
                         )}
-                        <span style={{ color: "var(--text-secondary)" }}>Nếu</span>
-                        <span style={{ background: `${cColor}18`, color: cColor, border: `1px solid ${cColor}44`, borderRadius: "6px", padding: "2px 8px", fontWeight: 700, fontSize: "0.8rem" }}>
+                        <span style={{ color: "var(--text-secondary)" }}>
+                          Nếu
+                        </span>
+                        <span
+                          style={{
+                            background: `${cColor}18`,
+                            color: cColor,
+                            border: `1px solid ${cColor}44`,
+                            borderRadius: "6px",
+                            padding: "2px 8px",
+                            fontWeight: 700,
+                            fontSize: "0.8rem",
+                          }}
+                        >
                           {SENSOR_LABEL[cond?.sensor]}
                         </span>
-                        <span style={{ color: "#ef4444", fontWeight: 600, fontSize: "0.8rem", marginLeft: "2px" }}>
+                        <span
+                          style={{
+                            color: "#ef4444",
+                            fontWeight: 600,
+                            fontSize: "0.8rem",
+                            marginLeft: "2px",
+                          }}
+                        >
                           vượt ngoài khoảng an toàn
                         </span>
                       </div>
