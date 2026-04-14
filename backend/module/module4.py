@@ -6,8 +6,8 @@ router = APIRouter(prefix="/api/logging", tags=["Module 4"])
 sensor_collection = None
 danger_collection = None
 device_collection = None
-system_collection = None
-_threshold_mgr = None  # ← Tham chiếu tới ThresholdManager của module2
+logupdate_collection = None  # ← db.Logupdate (thay cho system_update_collection)
+_threshold_mgr = None
 
 DEFAULT_THRESHOLDS = {
     "temp": {"min": 0, "max": 40},
@@ -20,16 +20,16 @@ DEFAULT_THRESHOLDS = {
 # INIT MODULE
 # =============================
 def init_module4(
-    sensor_col, danger_col, device_col, system_col=None, threshold_mgr=None
+    sensor_col, danger_col, device_col, logupdate_col=None, threshold_mgr=None
 ):
     global sensor_collection, danger_collection, device_collection
-    global system_collection, _threshold_mgr
+    global logupdate_collection, _threshold_mgr
 
     sensor_collection = sensor_col
     danger_collection = danger_col
     device_collection = device_col
-    system_collection = system_col
-    _threshold_mgr = threshold_mgr  # ← Nhận ThresholdManager từ module2
+    logupdate_collection = logupdate_col  # db.Logupdate
+    _threshold_mgr = threshold_mgr
 
 
 # =============================
@@ -38,29 +38,21 @@ def init_module4(
 def format_time(t):
     if isinstance(t, datetime):
         return t.strftime("%Y-%m-%d %H:%M:%S")
-    return t
+    return str(t) if t else "--"
 
 
 # =============================
-# SENSOR STATUS LOGIC — dùng ngưỡng động từ module2
+# SENSOR STATUS — dùng ngưỡng động từ module2
 # =============================
 def get_sensor_status(temp, humi, light, thresholds: dict) -> str:
-    """
-    Dùng ngưỡng max từ ThresholdManager thay vì hardcode.
-    Nếu bất kỳ cảm biến nào vượt max → trạng thái tương ứng.
-    """
     t_max = thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40)
     h_max = thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80)
     l_max = thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90)
 
-    # Mức nguy hiểm: vượt ngưỡng max 10%
     if temp > t_max * 1.1 or humi > h_max * 1.1 or light > l_max * 1.1:
         return "Nguy hiểm"
-
-    # Mức cảnh báo: vượt ngưỡng max
     if temp > t_max or humi > h_max or light > l_max:
         return "Cảnh báo"
-
     return "Bình thường"
 
 
@@ -68,7 +60,7 @@ def get_sensor_status(temp, humi, light, thresholds: dict) -> str:
 # DEVICE MAP
 # =============================
 DEVICE_MAP = {
-    1: "Đèn 1 (PIR)",
+    1: "Đèn báo trộm",
     2: "Đèn 2",
     3: "Đèn 3",
     4: "Đèn 4",
@@ -117,12 +109,22 @@ async def get_danger_history(
         violations = doc.get("violations", [])
 
         if violations:
-            # Mỗi violation tạo 1 dòng riêng
             for v in violations:
                 sensor = v.get("sensor", "Không rõ")
                 actual_val = v.get("value", "--")
                 unit = SENSOR_UNIT.get(sensor, "")
                 threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
+
+                # Tính level dựa vào actual value so với threshold
+                try:
+                    th_max = thresholds.get(
+                        sensor, DEFAULT_THRESHOLDS.get(sensor, {})
+                    ).get("max", 100)
+                    level = (
+                        "Nguy hiểm" if float(actual_val) > th_max * 1.1 else "Cảnh báo"
+                    )
+                except Exception:
+                    level = "Cảnh báo"
 
                 result.append(
                     {
@@ -130,15 +132,7 @@ async def get_danger_history(
                         "sensor": sensor,
                         "threshold": threshold_label,
                         "actual": f"{actual_val}{unit}",
-                        "level": (
-                            "Nguy hiểm"
-                            if v.get("value", 0)
-                            > thresholds.get(
-                                sensor, DEFAULT_THRESHOLDS.get(sensor, {})
-                            ).get("max", 100)
-                            * 1.1
-                            else "Cảnh báo"
-                        ),
+                        "level": level,
                     }
                 )
         else:
@@ -168,7 +162,6 @@ async def get_sensor_history(
     if sensor_collection is None:
         return []
 
-    # Lấy ngưỡng thực từ module2
     thresholds = DEFAULT_THRESHOLDS
     mgr = getattr(request.app.state, "threshold_mgr", _threshold_mgr)
     if mgr:
@@ -184,8 +177,6 @@ async def get_sensor_history(
         temp = doc.get("temp", 0)
         humi = doc.get("humi", 0)
         light = doc.get("light", 0)
-
-        # ← Dùng ngưỡng động thay vì hardcode
         status = get_sensor_status(temp, humi, light, thresholds)
 
         result.append(
@@ -214,55 +205,28 @@ async def get_device_history(limit: int = Query(20)):
     result = []
     async for doc in cursor:
         device_num = doc.get("numberdevice")
-
-        # --- THÊM 2 DÒNG NÀY VÀO ĐÂY ---
-        # Nếu là thiết bị số 5 thì bỏ qua, không đọc và không thêm vào mảng kết quả
-        if device_num == 5:
-            continue
-        # -------------------------------
-
-        
         old_status = doc.get("old_status", False)
         new_status = doc.get("new_status", False)
         reason = doc.get("reason", "")
 
-        # --- Nâng cấp hàm xử lý trạng thái ---
-        def format_status(val, dev_num):
-            # 1. Xử lý RIÊNG cho Servo (Thiết bị số 6)
-            if dev_num == 6:
-                if val == 0 or val is False:
-                    return "Đóng"
-                return "Mở"
-
-            # 2. Xử lý RIÊNG cho Quạt (Thiết bị số 7)
-            if dev_num == 7:
-                if val == 0 or val is False:
-                    return "Tắt"
-                elif val == 70:
-                    return "Mức 1"
-                elif val == 80:
-                    return "Mức 2"
-                elif val == 90:
-                    return "Mức 3"
-                elif val == 100:
-                    return "Mức 4"
-                # Dự phòng nếu sau này có gửi số lạ không nằm trong 4 mức trên
-                return f"Mức {val}" 
-
-            # 3. Nếu là Đèn/Công tắc thông thường (True/False)
-            if isinstance(val, bool):  
-                return "Bật" if val else "Tắt"
-            
-            # Các trường hợp thiết bị khác (nếu có)
-            return str(val)
+        # Phân loại actor dựa vào reason string
+        reason_lower = reason.lower()
+        if (
+            "tự động" in reason_lower
+            or "kịch bản" in reason_lower
+            or "hệ thống" in reason_lower
+        ):
+            actor = "Hệ thống"
+        else:
+            actor = "Người dùng"
 
         result.append(
             {
                 "time": format_time(doc.get("time")),
                 "device": DEVICE_MAP.get(device_num, f"Thiết bị {device_num}"),
-                "old_value": format_status(old_status, device_num),
-                "new_value": format_status(new_status, device_num),
-                "actor": "Hệ thống" if any(kw in reason.lower() for kw in ["hệ thống", "tự động", "ngừng phát hiện"]) else "Người dùng",
+                "old_value": "Bật" if old_status else "Tắt",
+                "new_value": "Bật" if new_status else "Tắt",
+                "actor": actor,
             }
         )
 
@@ -270,23 +234,51 @@ async def get_device_history(limit: int = Query(20)):
 
 
 # =============================
-# 4. SYSTEM UPDATE HISTORY
+# 4. SYSTEM UPDATE HISTORY — đọc từ db.Logupdate
+# Format mới từ module2:
+# {
+#   "time": datetime,
+#   "houseid": str,
+#   "target": "Cấu hình ngưỡng (temp)",
+#   "oldvalue": [{"min": 0, "max": 40}],
+#   "newvalue": [{"min": 0, "max": 35}]
+# }
 # =============================
 @router.get("/system-updates")
-async def get_system_updates(limit: int = Query(20)):
-    if system_collection is None:
+async def get_system_updates(
+    houseid: str = "HS001",
+    limit: int = Query(20),
+):
+    if logupdate_collection is None:
         return []
 
-    cursor = system_collection.find().sort("time", -1).limit(limit)
+    cursor = (
+        logupdate_collection.find({"houseid": houseid}).sort("time", -1).limit(limit)
+    )
 
     result = []
     async for doc in cursor:
+        target = doc.get("target", "--")
+        oldvalue = doc.get("oldvalue", [])
+        newvalue = doc.get("newvalue", [])
+
+        # Format oldvalue/newvalue thành string dễ đọc
+        def fmt_value(val):
+            if isinstance(val, list) and len(val) > 0:
+                v = val[0]
+                if isinstance(v, dict):
+                    # {"min": x, "max": y} → "min: x, max: y"
+                    parts = [f"{k}: {v2}" for k, v2 in v.items()]
+                    return " | ".join(parts)
+                return str(v)
+            return str(val) if val else "--"
+
         result.append(
             {
                 "time": format_time(doc.get("time")),
-                "field": doc.get("field"),
-                "old_value": doc.get("old_value"),
-                "new_value": doc.get("new_value"),
+                "field": target,
+                "old_value": fmt_value(oldvalue),
+                "new_value": fmt_value(newvalue),
             }
         )
 

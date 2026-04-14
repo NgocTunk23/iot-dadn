@@ -49,16 +49,16 @@ init_module3(scene_manager)
 automation_rules_col = db.Scenario  # Ánh xạ sang bảng Scenario theo ERD
 house_col = db.House  # THÊM MỚI: đọc emailtowarning, teletowarning
 logupdate_collection = db.Logupdate
-threshold_mgr    = ThresholdManager(house_col, logupdate_collection)
-channel_mgr      = NotificationChannelManager(house_col)
-rule_mgr         = AutomationRuleManager(automation_rules_col, threshold_mgr)
+threshold_mgr = ThresholdManager(house_col, logupdate_collection)
+channel_mgr = NotificationChannelManager(house_col)
+rule_mgr = AutomationRuleManager(automation_rules_col, threshold_mgr)
 alert_dispatcher = AlertDispatcher(danger_collection, channel_mgr)
 
 init_module4(
     collection,
     danger_collection,
     device_log_collection,
-    system_update_collection,
+    logupdate_collection,  # ← db.Logupdate
     threshold_mgr=threshold_mgr,
 )
 
@@ -68,10 +68,11 @@ last_device_status = {item[0]: item[1] for item in shared_device_status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
-init_module2(app, threshold_mgr, channel_mgr, rule_mgr,
-             alert_dispatcher, danger_collection)
-app.state.device_status      = shared_device_status
-app.state.is_danger_global   = False
+init_module2(
+    app, threshold_mgr, channel_mgr, rule_mgr, alert_dispatcher, danger_collection
+)
+app.state.device_status = shared_device_status
+app.state.is_danger_global = False
 app.state.latest_sensor_data = {}
 app.state.last_pir_state = False
 app.include_router(module2_router)
@@ -158,7 +159,9 @@ async def handle_data(payload: dict = Body(...)):
                     "new_status": stat,
                     "reason": reason_str,
                 }
-                await device_log_collection.update_one({"_id": dev_id_in_db}, {"$set": device_log}, upsert=True)
+                await device_log_collection.update_one(
+                    {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
+                )
                 last_device_status[dev_num] = stat
                 print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
 
@@ -178,12 +181,14 @@ async def handle_data(payload: dict = Body(...)):
                     "_id": dev_id_in_db,
                     "time": common_time,
                     "houseid": house_id,
-                    "numberdevice": 1, # Gắn mác ID 1 để hiện lên bảng log trên UI
+                    "numberdevice": 1,  # Gắn mác ID 1 để hiện lên bảng log trên UI
                     "old_status": app.state.last_pir_state,
                     "new_status": pir_active,
                     "reason": reason_str,
                 }
-                await device_log_collection.update_one({"_id": dev_id_in_db}, {"$set": device_log}, upsert=True)
+                await device_log_collection.update_one(
+                    {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
+                )
                 app.state.last_pir_state = pir_active
                 print(f"--- Đã ghi Log PIR: {reason_str} ---")
 
