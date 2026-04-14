@@ -1,24 +1,29 @@
 import React from 'react';
 
-export default function SettingsTab() {
+// Nhận prop onLogout từ App.jsx truyền xuống
+export default function SettingsTab({ onLogout }) {
+  
+  const handleLogout = () => {
+    // 1. Xóa toàn bộ dữ liệu phiên đăng nhập
+    localStorage.removeItem('houseid');
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('user');
+
+    // 2. Báo cho App.jsx biết để chuyển về màn hình Login
+    if (onLogout) {
+      onLogout();
+    } else {
+      // Nếu không có prop truyền vào thì dùng cách "chữa cháy" là tải lại trang
+      window.location.reload(); 
+    }
+  };
+
   return (
     <div className="control-panel">
-      <h3 className="panel-title">Cấu hình Hệ thống</h3>
-      <div className="device-item" style={{ marginBottom: '15px' }}>
-        <div className="device-info">
-          <div className="device-text">
-            <h4>Chế độ Ban Đêm (Dark Mode)</h4>
-            <p>Luôn bật trên giao diện hiện tại</p>
-          </div>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" defaultChecked disabled />
-          <span className="slider"></span>
-        </label>
-      </div>
-
-      <div style={{ marginTop: '30px' }}>
+  
+        {/* Thêm sự kiện onClick={handleLogout} vào nút */}
         <button 
+          onClick={handleLogout}
           style={{
             width: '100%',
             padding: '12px',
@@ -34,7 +39,6 @@ export default function SettingsTab() {
         >
           Đăng xuất
         </button>
-      </div>
     </div>
   );
 }

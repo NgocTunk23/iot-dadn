@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Tắt tự động tìm kiếm file (nếu bạn muốn tự chỉ định thủ công) */
+@source none;
+
+/* Chỉ định các đường dẫn chứa component của bạn */
+@source "../**/*.{js,ts,jsx,tsx}";
+
+/* Import thư viện hiệu ứng (đảm bảo file này tồn tại trong node_modules) */
+@import "tw-animate-css";

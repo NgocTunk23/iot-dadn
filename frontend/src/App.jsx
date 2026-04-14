@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
 import './index.css';
+
+// Import component Login vừa tạo (Đảm bảo đường dẫn chính xác)
+import Login from './Login'; 
 
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -11,20 +13,96 @@ import AlertTab from './components/AlertTab';
 import useSensorData from './hooks/useSensorData';
 import useDevices from './hooks/useDevices';
 
-
 const PAGE_TITLES = {
   dashboard: 'Tổng quan Hệ thống',
   devices: 'Quản lý Thiết bị',
-  alerts:    'Cảnh báo & Ngưỡng', 
+  alerts: 'Cảnh báo & Ngưỡng', 
   settings: 'Cài đặt Hệ thống',
 };
+import React, { useState, useEffect } from 'react'; // Nhớ import useEffect
 
 function App() {
+  // 1. Thêm State quản lý trạng thái đăng nhập
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userData, setUserData] = useState(null);
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const { data } = useSensorData();
   const { messages, addToast, dismissToast } = useToast();
   const devices = useDevices(addToast);
 
+
+  useEffect(() => {
+    const storedHouseId = localStorage.getItem('houseid');
+    // Kiểm tra cả localStorage và sessionStorage
+    const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
+
+    if (storedHouseId && storedUser) {
+      setUserData(JSON.parse(storedUser));
+      setIsAuthenticated(true);
+    }
+  }, []);
+  // 1. THÊM HÀM ĐĂNG XUẤT NÀY VÀO
+  const handleLogout = () => {
+    setIsAuthenticated(false); // Ép React hiển thị lại <Login />
+    setUserData(null);         // Xóa dữ liệu user trong state
+    setActiveTab('dashboard'); // Tiện tay reset tab về dashboard cho lần đăng nhập sau
+  };
+
+
+  // 2. Hàm xử lý khi người dùng nhấn nút Đăng nhập
+  // Trong file App.jsx
+
+  const handleLoginSubmit = async (credentials) => {
+    try {
+      // Gọi API tới Backend
+      const response = await fetch('http://localhost:5000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: credentials.email,
+          password: credentials.password
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Đăng nhập thành công
+        setUserData(data.user);
+        setIsAuthenticated(true);
+        
+        // ==========================================
+        // THÊM MỚI: LƯU VÀO TRÌNH DUYỆT
+        // ==========================================
+        // Lưu houseid người dùng nhập ở form
+        localStorage.setItem('houseid', credentials.houseId);
+        
+        // Nếu người dùng tick "Keep me connected", lưu luôn thông tin user
+        if (credentials.stayConnected) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+        } else {
+          // Lưu tạm thời cho phiên làm việc (mất khi đóng tab)
+          sessionStorage.setItem('user', JSON.stringify(data.user));
+        }
+
+        // Tùy chọn: thông báo
+        // addToast(`Xin chào ${data.user.fullname}!`, 'success');
+      } else {
+        alert(data.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại!");
+      }
+    } catch (error) {
+      console.error("Lỗi kết nối tới server:", error);
+      alert("Không thể kết nối đến máy chủ xác thực.");
+    }
+  };
+
+  // 3. Nếu CHƯA đăng nhập -> Chỉ render màn hình Login
+  if (!isAuthenticated) {
+    return <Login onLoginSubmit={handleLoginSubmit} />;
+  }
+
+  // 4. Nếu ĐÃ đăng nhập -> Render giao diện chính của App
   return (
     <div className="app-container">
       {/* Mobile Top Header */}
@@ -48,7 +126,7 @@ function App() {
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'devices' && <DevicesTab {...devices} />}
         {activeTab === 'alerts' && <AlertTab addToast={addToast} />}
-        {activeTab === 'settings' && <SettingsTab />}
+        {activeTab === 'settings' && <SettingsTab onLogout={handleLogout} />}
         
       </div>
 

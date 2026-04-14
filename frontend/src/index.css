@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
 
 :root {
   --bg-dark: #0D1117;
@@ -1355,4 +1356,31 @@ input:checked+.slider {
   background-repeat: no-repeat;
   background-position: right 1rem center;
   background-size: 1em;
+}
+
+
+/* --- PHẦN THÊM MỚI ĐỂ FIX MOBILE LOGIN --- */
+
+/* Đảm bảo chữ trong input luôn canh giữa và không bị mất dấu trên Mobile */
+input::placeholder {
+  text-align: center;
+}
+
+/* Fix chiều rộng container cho điện thoại cực nhỏ */
+@media (max-width: 480px) {
+  .login-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  /* Phóng to font chữ tiêu đề trên mobile để dễ nhìn */
+  h2 {
+    font-size: 2.75rem !important; 
+  }
+}
+
+/* Đảm bảo hiệu ứng focus mượt mà cho các ô nhập liệu lớn */
+input:focus {
+  transform: scale(1.01);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
 }
