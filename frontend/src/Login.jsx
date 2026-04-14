@@ -71,16 +71,16 @@ export default function Login({ onLoginSubmit }) {
               {/* EMAIL */}
               <div className="w-full max-w-[320px]" style={{ marginBottom: '20px' }}>
                 <label className="block text-gray-400 mb-3 text-base uppercase tracking-widest text-left">
-                  Email
+                  Username/Email
                 </label>
                 <div className="relative">
                   {!email && (
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={18} />
                   )}
                   <input
-                    type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    type="text" value={email} onChange={(e) => setEmail(e.target.value)}
                     onFocus={() => setEmailFocused(true)} onBlur={() => setEmailFocused(false)}
-                    placeholder="name@company.com" required
+                    placeholder="Username or email" required
                     className={`w-full ${email ? 'pl-4' : 'pl-12'} py-4 rounded-lg border bg-[#1A1F26] text-white outline-none text-xl transition-all duration-300 focus:bg-[#1A1F26]`}
                     style={{ borderColor: emailFocused ? "#00CCFF" : "#2D333B" }}
                   />
