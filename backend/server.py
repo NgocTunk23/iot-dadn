@@ -237,6 +237,50 @@ app.include_router(module1_router)
 app.include_router(module4_router)
 
 
+
+# =====================================================================
+# --- THÊM MỚI: TÍCH HỢP ĐĂNG NHẬP (KHÔNG SỬA CODE CŨ) ---
+# =====================================================================
+# Khai báo collection chứa thông tin user (ví dụ collection tên là 'users' hoặc 'User')
+users_collection = db.User 
+
+@app.post("/api/login")
+async def login_api(payload: dict = Body(...)):
+    username = payload.get("username")
+    password = payload.get("password")
+
+    if not username or not password:
+        return {"success": False, "message": "Vui lòng nhập đầy đủ Username/Email và Password!"}
+
+    try:
+        # Tìm user theo _id hoặc email
+        user = await users_collection.find_one({
+            "$or": [
+                {"email": username},
+                {"_id": username}
+            ]
+        })
+
+        if not user:
+            return {"success": False, "message": "Tài khoản không tồn tại!"}
+
+        if user.get("password") != password:
+            return {"success": False, "message": "Sai mật khẩu!"}
+
+        # Xóa password để không bị lộ khi gửi về frontend
+        user.pop("password", None)
+
+        return {
+            "success": True,
+            "message": "Đăng nhập thành công",
+            "user": user
+        }
+    except Exception as e:
+        print(f"Lỗi đăng nhập: {e}")
+        return {"success": False, "message": "Lỗi máy chủ nội bộ"}
+# =====================================================================
+
+
 @app.on_event("startup")
 async def startup_event():
     # Khởi chạy các background tasks khi server bắt đầu
