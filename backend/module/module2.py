@@ -424,7 +424,6 @@ class AutomationRuleManager:
             if was_active_rule:
                 if houseid in self._pre_rule_states:
                     print(f"[MODULE2] Kịch bản '{was_active_rule}' hết hiệu lực. Phục hồi trạng thái cũ.")
-                    
                     new_status = [list(item) for item in self._pre_rule_states[houseid]]
                     
                     triggered.append({
