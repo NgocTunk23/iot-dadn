@@ -264,9 +264,22 @@ class AutomationRuleManager:
         self.threshold_mgr = threshold_mgr
         self._active_rules: dict[str, str | None] = {}   # houseid → rule_name
         self._pre_rule_states: dict[str, list] = {}
+    _SENSOR_PRIORITY = ["temp", "humi", "light"]
     def get_active_rule_name(self, houseid: str) -> str | None:
         return self._active_rules.get(houseid)
+    @staticmethod
+    def _get_sensor_set(conditions: list) -> frozenset:
+        return frozenset(c.get("sensor") for c in conditions if c.get("sensor"))
 
+    @classmethod
+    def _combo_rank(cls, sensor_set: frozenset) -> tuple:
+        n = len(sensor_set)
+        score = sum(
+            2 ** (2 - cls._SENSOR_PRIORITY.index(s))
+            for s in sensor_set
+            if s in cls._SENSOR_PRIORITY
+        )
+        return (-n, -score)
     async def get_rules(self, houseid: str) -> list:
         cursor  = self.rules_col.find({"houseid": houseid})
         results = await cursor.to_list(length=200)
@@ -370,37 +383,50 @@ class AutomationRuleManager:
 
     async def evaluate_and_apply(self, houseid: str, sensor_data: dict,
                                  current_status: list) -> tuple[list, list]:
-        """
-        Đánh giá tất cả kịch bản tự động của house và áp dụng nếu điều kiện thoả mãn.
-        Trả về (new_status, triggered_rules).
-        """
         thresholds = await self.threshold_mgr.get_thresholds(houseid)
         rules      = await self.get_rules(houseid)
         new_status = [list(item) for item in current_status]
         triggered  = []
+
         was_active_rule = self._active_rules.get(houseid)
-        is_any_rule_matched = False
+        matched_rules = []
         for rule in rules:
             if not rule.get("enabled", True):
                 continue
 
             conditions = rule.get("conditions", [])
-            matched    = self._eval_conditions(conditions, sensor_data, thresholds)
-            if not matched:
-                continue
-            is_any_rule_matched = True
-            if not was_active_rule and houseid not in self._pre_rule_states:
-                self._pre_rule_states[houseid] = [list(item) for item in current_status]
-            actions  = rule.get("action", [])
-            changes  = self._apply_actions(new_status, actions)
-            triggered.append({"rule_name": rule["name"], "changes": changes})
-            self._active_rules[houseid] = rule["name"]
+            if self._eval_conditions(conditions, sensor_data, thresholds):
+                rank = self._combo_rank(self._get_sensor_set(conditions))
+                matched_rules.append((rule, rank))
 
-        if not is_any_rule_matched:
+        matched_rules.sort(key=lambda x: x[1])
+        winner_rule = matched_rules[0][0] if matched_rules else None
+        winner_name = winner_rule.get("name") if winner_rule else None
+
+        if winner_rule:
+            actions = winner_rule.get("action", [])
+            
+            if winner_name != was_active_rule:
+                if not was_active_rule and houseid not in self._pre_rule_states:
+                    self._pre_rule_states[houseid] = [list(item) for item in current_status]
+                elif was_active_rule:
+                    print(f"[MODULE2] Kịch bản '{was_active_rule}' bị đè bởi '{winner_name}'.")
+
+                changes = self._apply_actions(new_status, actions)
+                
+                triggered.append({"rule_name": winner_name, "changes": changes})
+                self._active_rules[houseid] = winner_name
+                
+            else:
+                self._apply_actions(new_status, actions)
+
+        else:
             if was_active_rule:
                 if houseid in self._pre_rule_states:
                     print(f"[MODULE2] Kịch bản '{was_active_rule}' hết hiệu lực. Phục hồi trạng thái cũ.")
+                    
                     new_status = [list(item) for item in self._pre_rule_states[houseid]]
+                    
                     triggered.append({
                         "rule_name": f"Hệ thống an toàn trở lại",
                         "changes": [{
@@ -415,6 +441,7 @@ class AutomationRuleManager:
             self._active_rules[houseid] = None
 
         return new_status, triggered
+
 
     @staticmethod
     def _eval_conditions(conditions: list, sensor_data: dict, thresholds: dict) -> bool:
