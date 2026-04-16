@@ -70,7 +70,7 @@ async def check_sensor_connection():
                     danger_data = {
                         "_id": now_vn,
                         "time": now_vn, # MongoDB sẽ tự convert sang UTC
-                        "houseid": "HS001",
+                        "houseid": latest_sensor_data.get("houseid", "HS001"),
                         "type": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
                         "value": {}
                     }
