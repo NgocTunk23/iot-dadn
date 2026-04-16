@@ -24,7 +24,7 @@ from module.module3 import (
 import module.module3 as module3
 from module.module1 import DashboardAnalytics, init_module1, router as module1_router
 from module.module4 import init_module4, router as module4_router
-
+from module.module2 import sync_device_state
 app = FastAPI()
 
 # 1. Cấu hình CORS
@@ -89,7 +89,7 @@ async def handle_data(payload: dict = Body(...)):
     # Payload từ Yolobit main3.py có dạng:
     # { houseid: "HS001", temp: 30, humi: 60, light: 50, numberdevices: [{numberdevice: 1, status: True}, ...] }
     house_id = payload.get("houseid", "HS001")
-
+    await sync_device_state(db.House, house_id, payload.get("numberdevices", []))
     common_time = now_vn
     payload["time"] = common_time  # Dùng làm PK / _id
     payload["date"] = now_vn.strftime("%Y-%m-%d")  # Phục vụ Lọc API
@@ -202,8 +202,9 @@ async def handle_data(payload: dict = Body(...)):
 
 #! Yolobit sẽ gọi GET vào đây để lấy lệnh
 @app.get("/api/get-commands")
-async def get_commands():
+async def get_commands(houseid: str = Query("HS001")):
     # Trả về format mới: dict -> array of objects
+    house = await db.House.find_one({"_id.houseid": houseid})
     commands_array = [
         {"numberdevice": item[0], "status": item[1]} for item in module3.device_status
     ]
@@ -217,10 +218,13 @@ async def get_commands():
 @app.post("/api/control")
 async def update_control(payload: dict = Body(...)):
     # Nhận dữ liệu: {"commands": [[2, True], [6, 85]]}
+    house_id = payload.get("houseid", "HS001")
     new_cmd = payload.get("commands")
     if new_cmd:
         module3.device_status = new_cmd
         app.state.device_status = new_cmd
+        from module.module2 import sync_device_state
+        await sync_device_state(db.House, house_id, new_cmd)
         print(f"--- Lệnh điều khiển mới: {module3.device_status} ---")
         return {"status": "Updated"}
     return {"status": "Error"}, 400
@@ -248,7 +252,7 @@ users_collection = db.User
 async def login_api(payload: dict = Body(...)):
     username = payload.get("username")
     password = payload.get("password")
-
+    house_id = payload.get("houseid", "HS001")
     if not username or not password:
         return {"success": False, "message": "Vui lòng nhập đầy đủ Username/Email và Password!"}
 
@@ -266,7 +270,18 @@ async def login_api(payload: dict = Body(...)):
 
         if user.get("password") != password:
             return {"success": False, "message": "Sai mật khẩu!"}
-
+        
+        actual_username = user.get("username", user.get("_id", user.get("email")))
+        old_house = await house_col.find_one({"_id.houseid": house_id})
+        if old_house:
+            current_id_username = old_house.get("_id", {}).get("username", "") 
+            if current_id_username != actual_username:
+                await house_col.delete_one({"_id.houseid": house_id})
+                old_house["_id"] = {"houseid": house_id, "username": actual_username}
+                old_house.pop("houseid", None)
+                old_house.pop("username", None)
+                await house_col.insert_one(old_house)
+                print(f"--- Đã cập nhật _id: {old_house['_id']} cho house '{house_id}' ---")
         # Xóa password để không bị lộ khi gửi về frontend
         user.pop("password", None)
 
@@ -287,7 +302,8 @@ async def startup_event():
     import module.module1 as module1_mod
 
     module1_mod.start_monitoring()
-
+    from module.module2 import initialize_default_house 
+    await initialize_default_house(house_col)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)
