@@ -281,7 +281,6 @@ async def login_api(payload: dict = Body(...)):
                 new_house_data["_id"] = {"houseid": house_id, "username": actual_username}
                 new_house_data.pop("houseid", None)
                 new_house_data.pop("username", None)
-                
                 await house_col.insert_one(new_house_data)
         # Xóa password để không bị lộ khi gửi về frontend
         user.pop("password", None)
