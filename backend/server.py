@@ -45,9 +45,9 @@ device_log_collection = db.Device_log  # Bảng log thiết bị
 system_update_collection = db.System_update_log  # Bảng log cập nhật hệ thống
 scenes_collection = db.Mode  # Bảng kịch bản
 scene_manager = SceneManager(scenes_collection)
-init_module3(scene_manager)
+house_col = db.House  # Đọc thông tin nhà (numberdevices, thresholds, ...)
+init_module3(scene_manager, house_col)
 automation_rules_col = db.Scenario  # Ánh xạ sang bảng Scenario theo ERD
-house_col = db.House  # THÊM MỚI: đọc emailtowarning, teletowarning
 logupdate_collection = db.Logupdate
 threshold_mgr = ThresholdManager(house_col, logupdate_collection)
 channel_mgr = NotificationChannelManager(house_col)
