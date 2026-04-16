@@ -274,14 +274,15 @@ async def login_api(payload: dict = Body(...)):
         actual_username = user.get("username", user.get("_id", user.get("email")))
         old_house = await house_col.find_one({"_id.houseid": house_id})
         if old_house:
-            current_id_username = old_house.get("_id", {}).get("username", "") 
-            if current_id_username != actual_username:
+            current_id = old_house.get("_id", {})
+            if isinstance(current_id, dict) and current_id.get("username") != actual_username:
                 await house_col.delete_one({"_id.houseid": house_id})
-                old_house["_id"] = {"houseid": house_id, "username": actual_username}
-                old_house.pop("houseid", None)
-                old_house.pop("username", None)
-                await house_col.insert_one(old_house)
-                print(f"--- Đã cập nhật _id: {old_house['_id']} cho house '{house_id}' ---")
+                new_house_data = dict(old_house) 
+                new_house_data["_id"] = {"houseid": house_id, "username": actual_username}
+                new_house_data.pop("houseid", None)
+                new_house_data.pop("username", None)
+                
+                await house_col.insert_one(new_house_data)
         # Xóa password để không bị lộ khi gửi về frontend
         user.pop("password", None)
 
