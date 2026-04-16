@@ -252,7 +252,7 @@ users_collection = db.User
 async def login_api(payload: dict = Body(...)):
     username = payload.get("username")
     password = payload.get("password")
-
+    house_id = payload.get("houseid", "HS001")
     if not username or not password:
         return {"success": False, "message": "Vui lòng nhập đầy đủ Username/Email và Password!"}
 
@@ -270,7 +270,15 @@ async def login_api(payload: dict = Body(...)):
 
         if user.get("password") != password:
             return {"success": False, "message": "Sai mật khẩu!"}
+        
+        actual_username = user.get("username", user.get("_id", user.get("email")))
 
+        # 3. Cập nhật field 'username' vào bảng House tương ứng
+        await house_col.update_one(
+            {"houseid": house_id},
+            {"$set": {"username": actual_username}}
+        )
+        print(f"--- Đã cập nhật username '{actual_username}' cho house '{house_id}' ---")
         # Xóa password để không bị lộ khi gửi về frontend
         user.pop("password", None)
 
