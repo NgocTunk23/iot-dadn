@@ -262,9 +262,12 @@ class AutomationRuleManager:
     def __init__(self, rules_col, threshold_mgr: ThresholdManager):
         self.rules_col     = rules_col
         self.threshold_mgr = threshold_mgr
-        self._active_rules: dict[str, str | None] = {}   # houseid → rule_name
+        self._active_rules: dict[str, str | None] = {}
         self._pre_rule_states: dict[str, list] = {}
+        self._active_actions: dict[str, list] = {}
+
     _SENSOR_PRIORITY = ["temp", "humi", "light"]
+
     def get_active_rule_name(self, houseid: str) -> str | None:
         return self._active_rules.get(houseid)
     @staticmethod
@@ -383,17 +386,24 @@ class AutomationRuleManager:
 
     async def evaluate_and_apply(self, houseid: str, sensor_data: dict,
                                  current_status: list) -> tuple[list, list]:
+        """
+        Logic ưu tiên kịch bản:
+          - Combo 3 sensor (temp+humi+light) > combo 2 (temp+humi > temp+light > humi+light) > đơn (temp > humi > light)
+          - Khi chuyển kịch bản: undo actions kịch bản cũ (về pre_rule_state) rồi áp kịch bản mới
+          - pre_rule_state chỉ được snapshot 1 lần duy nhất khi chuyển từ "không kịch bản" → "có kịch bản"
+          - Khi tất cả kịch bản tắt: restore về pre_rule_state
+        """
         thresholds = await self.threshold_mgr.get_thresholds(houseid)
         rules      = await self.get_rules(houseid)
-        new_status = [list(item) for item in current_status]
         triggered  = []
 
         was_active_rule = self._active_rules.get(houseid)
+
+        # ── 1. Tìm kịch bản thắng (winner) ──────────────────────────────
         matched_rules = []
         for rule in rules:
             if not rule.get("enabled", True):
                 continue
-
             conditions = rule.get("conditions", [])
             if self._eval_conditions(conditions, sensor_data, thresholds):
                 rank = self._combo_rank(self._get_sensor_set(conditions))
@@ -403,41 +413,64 @@ class AutomationRuleManager:
         winner_rule = matched_rules[0][0] if matched_rules else None
         winner_name = winner_rule.get("name") if winner_rule else None
 
+        # ── 2. Có kịch bản thắng ─────────────────────────────────────────
         if winner_rule:
-            actions = winner_rule.get("action", [])
-            
+            winner_actions = winner_rule.get("action", [])
+
             if winner_name != was_active_rule:
-                if not was_active_rule and houseid not in self._pre_rule_states:
+                # ── 2a. Kịch bản thay đổi (hoặc lần đầu kích hoạt) ──────
+
+                # Snapshot pre_rule_state CHỈ 1 LẦN khi chưa có kịch bản nào
+                if not was_active_rule:
                     self._pre_rule_states[houseid] = [list(item) for item in current_status]
-                elif was_active_rule:
-                    print(f"[MODULE2] Kịch bản '{was_active_rule}' bị đè bởi '{winner_name}'.")
+                    print(f"[MODULE2] Snapshot pre_rule_state cho {houseid}: {self._pre_rule_states[houseid]}")
 
-                changes = self._apply_actions(new_status, actions)
-                
+                # Bắt đầu từ pre_rule_state rồi áp kịch bản mới
+                # → đảm bảo undo hoàn toàn kịch bản cũ, chỉ giữ trạng thái trung lập
+                base_status = [list(item) for item in self._pre_rule_states[houseid]]
+
+                if was_active_rule:
+                    print(f"[MODULE2] Kịch bản '{was_active_rule}' bị đè bởi '{winner_name}'. "
+                          f"Undo kịch bản cũ, áp kịch bản mới từ pre_rule_state.")
+
+                new_status = base_status
+                changes = self._apply_actions(new_status, winner_actions)
+
                 triggered.append({"rule_name": winner_name, "changes": changes})
-                self._active_rules[houseid] = winner_name
-                
-            else:
-                self._apply_actions(new_status, actions)
+                self._active_rules[houseid]  = winner_name
+                self._active_actions[houseid] = winner_actions
 
+            else:
+                # ── 2b. Kịch bản giữ nguyên — chỉ re-apply để đảm bảo đúng trạng thái
+                new_status = [list(item) for item in self._pre_rule_states.get(houseid, current_status)]
+                self._apply_actions(new_status, winner_actions)
+
+        # ── 3. Không có kịch bản nào thoả — restore về pre_rule_state ───
         else:
             if was_active_rule:
                 if houseid in self._pre_rule_states:
-                    print(f"[MODULE2] Kịch bản '{was_active_rule}' hết hiệu lực. Phục hồi trạng thái cũ.")
+                    print(f"[MODULE2] Kịch bản '{was_active_rule}' hết hiệu lực. "
+                          f"Phục hồi trạng thái trước khi có kịch bản.")
                     new_status = [list(item) for item in self._pre_rule_states[houseid]]
-                    
                     triggered.append({
-                        "rule_name": f"Hệ thống an toàn trở lại",
+                        "rule_name": "Hệ thống an toàn trở lại",
                         "changes": [{
-                            "device_name": "Tất cả thiết bị", 
-                            "changed": True, 
-                            "from": f"Kịch bản {was_active_rule}", 
-                            "to": "Khôi phục trạng thái ban đầu"
+                            "device_name": "Tất cả thiết bị",
+                            "changed":     True,
+                            "from":        f"Kịch bản {was_active_rule}",
+                            "to":          "Khôi phục trạng thái ban đầu",
                         }]
                     })
                     del self._pre_rule_states[houseid]
-            
-            self._active_rules[houseid] = None
+                else:
+                    # Không có snapshot → giữ nguyên current (edge case)
+                    new_status = [list(item) for item in current_status]
+            else:
+                # Không có kịch bản nào trước đó và cũng không có bây giờ → giữ nguyên
+                new_status = [list(item) for item in current_status]
+
+            self._active_rules.pop(houseid, None)
+            self._active_actions.pop(houseid, None)
 
         return new_status, triggered
 
@@ -561,10 +594,12 @@ async def process_danger_and_rules(app, payload: dict, house_id: str):
     new_status, triggered_rules = await rule_mgr.evaluate_and_apply(
         house_id, sensor_data, app.state.device_status
     )
+    state_changed = new_status != app.state.device_status
     app.state.device_status = new_status
-    if triggered_rules:
+    if triggered_rules or state_changed:
         await sync_device_state(threshold_mgr.house_col, house_id, new_status)
-        print(f"[MODULE2] Đã lưu trạng thái kịch bản '{triggered_rules[0]['rule_name']}' vào DB.")
+        label = triggered_rules[0]['rule_name'] if triggered_rules else "thay đổi trạng thái"
+        print(f"[MODULE2] Đã lưu trạng thái '{label}' vào DB.")
     if is_danger:
         has_changes = any(
             c.get("changed")
