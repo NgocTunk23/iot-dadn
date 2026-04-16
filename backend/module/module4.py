@@ -170,7 +170,7 @@ async def get_sensor_history(
         except Exception:
             pass
 
-    cursor = sensor_collection.find().sort("time", -1).limit(limit)
+    cursor = sensor_collection.find({"houseid": houseid}).sort("time", -1).limit(limit)
 
     result = []
     async for doc in cursor:
@@ -196,11 +196,14 @@ async def get_sensor_history(
 # 3. DEVICE HISTORY
 # =============================
 @router.get("/device-history")
-async def get_device_history(limit: int = Query(20)):
+async def get_device_history(
+    houseid: str = Query(...),
+    limit: int = Query(20),
+):
     if device_collection is None:
         return []
 
-    cursor = device_collection.find().sort("time", -1).limit(limit)
+    cursor = device_collection.find({"houseid": houseid}).sort("time", -1).limit(limit)
 
     result = []
     async for doc in cursor:
