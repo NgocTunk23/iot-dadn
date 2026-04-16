@@ -204,7 +204,7 @@ async def handle_data(payload: dict = Body(...)):
 @app.get("/api/get-commands")
 async def get_commands(houseid: str = Query("HS001")):
     # Trả về format mới: dict -> array of objects
-    house = await db.House.find_one({"houseid": houseid})
+    house = await db.House.find_one({"_id.houseid": houseid})
     commands_array = [
         {"numberdevice": item[0], "status": item[1]} for item in module3.device_status
     ]
@@ -272,13 +272,16 @@ async def login_api(payload: dict = Body(...)):
             return {"success": False, "message": "Sai mật khẩu!"}
         
         actual_username = user.get("username", user.get("_id", user.get("email")))
-
-        # 3. Cập nhật field 'username' vào bảng House tương ứng
-        await house_col.update_one(
-            {"houseid": house_id},
-            {"$set": {"username": actual_username}}
-        )
-        print(f"--- Đã cập nhật username '{actual_username}' cho house '{house_id}' ---")
+        old_house = await house_col.find_one({"_id.houseid": house_id})
+        if old_house:
+            current_id_username = old_house.get("_id", {}).get("username", "") 
+            if current_id_username != actual_username:
+                await house_col.delete_one({"_id.houseid": house_id})
+                old_house["_id"] = {"houseid": house_id, "username": actual_username}
+                old_house.pop("houseid", None)
+                old_house.pop("username", None)
+                await house_col.insert_one(old_house)
+                print(f"--- Đã cập nhật _id: {old_house['_id']} cho house '{house_id}' ---")
         # Xóa password để không bị lộ khi gửi về frontend
         user.pop("password", None)
 

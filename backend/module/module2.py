@@ -37,7 +37,7 @@ HOUSE_THRESHOLD_FIELDS = {
 #  Hàm helper: đảm bảo House tồn tại
 # ══════════════════════════════════════════════════════════════════
 async def ensure_house_default(house_col, houseid: str, username: str = ""):
-    house = await house_col.find_one({"houseid": houseid})
+    house = await house_col.find_one({"_id.houseid": houseid})
     if not house:
         now = datetime.now(VN_TZ).replace(tzinfo=None)
         DEFAULT_NUMBERDEVICES = [
@@ -49,8 +49,7 @@ async def ensure_house_default(house_col, houseid: str, username: str = ""):
             {"numberdevice": 7, "type": "quat",          "status": 0},
         ]
         default_house = {
-            "houseid":          houseid,
-            "username":         username,
+            "_id":              {"houseid": houseid, "username": username},
             "tempmin":          DEFAULT_THRESHOLDS["temp"]["min"],
             "tempmax":          DEFAULT_THRESHOLDS["temp"]["max"],
             "humimin":          DEFAULT_THRESHOLDS["humi"]["min"],
@@ -73,7 +72,7 @@ async def initialize_default_house(house_col):
     await ensure_house_default(house_col, "HS001")
 
 async def sync_device_state(house_col, house_id: str, updates: list):
-    house = await house_col.find_one({"houseid": house_id})
+    house = await house_col.find_one({"_id.houseid": house_id})
     if not house:
         return
 
@@ -91,7 +90,7 @@ async def sync_device_state(house_col, house_id: str, updates: list):
             device_map[d_id]["status"] = d_val
 
     await house_col.update_one(
-        {"houseid": house_id},
+        {"_id.houseid": house_id},
         {"$set": {"numberdevices": list(device_map.values())}}
     )
     print(f"[MODULE2] Đã đồng bộ thiết bị cho {house_id} vào Database.")
@@ -123,7 +122,7 @@ class ThresholdManager:
 
     async def get_thresholds(self, houseid: str) -> dict:
         await ensure_house_default(self.house_col, houseid)
-        house = await self.house_col.find_one({"houseid": houseid})
+        house = await self.house_col.find_one({"_id.houseid": houseid})
         result = {}
         for sensor, fields in HOUSE_THRESHOLD_FIELDS.items():
             default = DEFAULT_THRESHOLDS[sensor]
@@ -149,7 +148,7 @@ class ThresholdManager:
         now        = datetime.now(VN_TZ).replace(tzinfo=None)
 
         await self.house_col.update_one(
-            {"houseid": houseid},
+            {"_id.houseid": houseid},
             {"$set": {fields["min"]: float(min_val), fields["max"]: float(max_val), "createdat": now}},
             upsert=True,
         )
@@ -173,7 +172,7 @@ class ThresholdManager:
             update_fields[fields["min"]] = DEFAULT_THRESHOLDS[sensor]["min"]
             update_fields[fields["max"]] = DEFAULT_THRESHOLDS[sensor]["max"]
 
-        await self.house_col.update_one({"houseid": houseid}, {"$set": update_fields}, upsert=True)
+        await self.house_col.update_one({"_id.houseid": houseid}, {"$set": update_fields}, upsert=True)
 
         if self.logupdate_col is not None:
             await self.logupdate_col.insert_one({
@@ -200,7 +199,7 @@ class NotificationChannelManager:
 
     async def get_channels(self, houseid: str) -> dict:
         await ensure_house_default(self.house_col, houseid)
-        house = await self.house_col.find_one({"houseid": houseid}) or {}
+        house = await self.house_col.find_one({"_id.houseid": houseid}) or {}
         return {
             "telegram": {
                 "enabled":   house.get("telegram_enabled", False),
@@ -234,7 +233,7 @@ class NotificationChannelManager:
         else:
             return {"status": "error", "message": f"Kênh '{channel}' không hợp lệ."}
 
-        await self.house_col.update_one({"houseid": houseid}, {"$set": update}, upsert=True)
+        await self.house_col.update_one({"_id.houseid": houseid}, {"$set": update}, upsert=True)
         return {"status": "success", "message": f"Đã cập nhật kênh {channel}."}
 
 
