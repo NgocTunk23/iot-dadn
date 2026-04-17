@@ -72,7 +72,7 @@ const handleLoginSubmit = async (credentials) => {
       setIsAuthenticated(true);
       // Lưu đúng houseid mà backend đã xác nhận
       localStorage.setItem('houseid', data.houseid); 
-      // localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('user', JSON.stringify({ _id: data.user._id }));
     } else {
       alert(data.message);
     }
