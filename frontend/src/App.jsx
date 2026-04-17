@@ -53,49 +53,33 @@ function App() {
   // 2. Hàm xử lý khi người dùng nhấn nút Đăng nhập
   // Trong file App.jsx
 
-  const handleLoginSubmit = async (credentials) => {
-    try {
-      // Gọi API tới Backend
-      const response = await fetch('http://localhost:5000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: credentials.email,
-          password: credentials.password
-        })
-      });
+const handleLoginSubmit = async (credentials) => {
+  try {
+    const response = await fetch('http://localhost:5000/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: credentials.email, // Đây là username/email từ form
+        password: credentials.password,
+        houseid: credentials.houseId // GỬI HOUSEID LÊN ĐÂY
+      })
+    });
 
-      const data = await response.json();
+    const data = await response.json();
 
-      if (response.ok && data.success) {
-        // Đăng nhập thành công
-        setUserData(data.user);
-        setIsAuthenticated(true);
-        
-        // ==========================================
-        // THÊM MỚI: LƯU VÀO TRÌNH DUYỆT
-        // ==========================================
-        // Lưu houseid người dùng nhập ở form
-        localStorage.setItem('houseid', credentials.houseId);
-        
-        // Nếu người dùng tick "Keep me connected", lưu luôn thông tin user
-        if (credentials.stayConnected) {
-          localStorage.setItem('user', JSON.stringify(data.user));
-        } else {
-          // Lưu tạm thời cho phiên làm việc (mất khi đóng tab)
-          sessionStorage.setItem('user', JSON.stringify(data.user));
-        }
-
-        // Tùy chọn: thông báo
-        // addToast(`Xin chào ${data.user.fullname}!`, 'success');
-      } else {
-        alert(data.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại!");
-      }
-    } catch (error) {
-      console.error("Lỗi kết nối tới server:", error);
-      alert("Không thể kết nối đến máy chủ xác thực.");
+    if (data.success) {
+      setUserData(data.user);
+      setIsAuthenticated(true);
+      // Lưu đúng houseid mà backend đã xác nhận
+      localStorage.setItem('houseid', data.houseid); 
+      // localStorage.setItem('user', JSON.stringify(data.user));
+    } else {
+      alert(data.message);
     }
-  };
+  } catch (error) {
+    alert("Lỗi kết nối server");
+  }
+};
 
   // 3. Nếu CHƯA đăng nhập -> Chỉ render màn hình Login
   if (!isAuthenticated) {

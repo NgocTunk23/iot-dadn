@@ -65,3 +65,42 @@ docker-compose up --build
 Frontend Web: http://localhost:80
 
 Backend API: http://localhost:5000/api/
+
+
+db.User.insertOne({
+  _id: 'NgocTune',
+  password: 'password123',
+  cccd: '079099123456',
+  fullname: 'Nguyễn Ngọc Tôn',
+  dateofbirth: new Date('2005-11-14T00:00:00.000Z'),
+  address: 'Dĩ An, Bình Dương',
+  createdat: new Date('2026-04-14T15:25:00.000Z'),
+  email: 'ton.nguyen1411030723@hcmut.edu.vn',
+  phone: '0945498375'
+})
+
+
+db.House.insertOne(
+{
+    _id: { houseid: 'HS002', username: 'NgocTune' },
+    tempmin: 0,
+    tempmax: 40,
+    humimin: 20,
+    humimax: 80,
+    lightmin: 0,
+    lightmax: 90,
+    emailtowarning: 'ton.nguyen1411030723@hcmut.edu.vn',
+    teletowarning: {
+      token: '8303000903:AAEhkqa47g8sroJqP-riayYVri5UjY6b7rI',
+      id: '-5054028151'
+    },
+    createdat: ISODate('2026-04-14T15:25:00.000Z'),
+    numberdevices: [
+      { numberdevice: 2, type: 'denchongtrom', status: false },
+      { numberdevice: 1, type: 'den', status: false },
+   
+      { numberdevice: 7, type: 'servo', status: 0 },
+      { numberdevice: 6, type: 'quat', status: 0 }
+    ]
+  }
+)

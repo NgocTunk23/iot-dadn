@@ -250,51 +250,55 @@ users_collection = db.User
 
 @app.post("/api/login")
 async def login_api(payload: dict = Body(...)):
-    username = payload.get("username")
+    username_input = payload.get("username")
     password = payload.get("password")
-    house_id = payload.get("houseid", "HS001")
-    if not username or not password:
+    house_id = payload.get("houseid")
+    
+    if not username_input or not password:
         return {"success": False, "message": "Vui lòng nhập đầy đủ Username/Email và Password!"}
 
     try:
-        # Tìm user theo _id hoặc email
+        # 1. Kiểm tra User tồn tại theo _id (username) hoặc email
         user = await users_collection.find_one({
             "$or": [
-                {"email": username},
-                {"_id": username}
+                {"email": username_input},
+                {"_id": username_input}
             ]
         })
 
         if not user:
             return {"success": False, "message": "Tài khoản không tồn tại!"}
 
+        # 2. Kiểm tra Password
         if user.get("password") != password:
             return {"success": False, "message": "Sai mật khẩu!"}
         
-        actual_username = user.get("username", user.get("_id", user.get("email")))
-        old_house = await house_col.find_one({"_id.houseid": house_id})
-        if old_house:
-            current_id = old_house.get("_id", {})
-            if isinstance(current_id, dict) and current_id.get("username") != actual_username:
-                await house_col.delete_one({"_id.houseid": house_id})
-                new_house_data = dict(old_house) 
-                new_house_data["_id"] = {"houseid": house_id, "username": actual_username}
-                new_house_data.pop("houseid", None)
-                new_house_data.pop("username", None)
-                await house_col.insert_one(new_house_data)
+        # Lấy chính xác username từ _id của bảng User (vì người dùng có thể đang nhập bằng email)
+        actual_username = user.get("_id")
+
+        # 3. Kiểm tra xem House ID có thực sự thuộc về User này không
+        # Khóa chính của bảng house là tổ hợp của houseid và username
+        house = await house_col.find_one({
+            "_id.houseid": house_id,
+            "_id.username": actual_username
+        })
+
+        if not house:
+            return {"success": False, "message": f"House ID '{house_id}' không tồn tại hoặc không thuộc về tài khoản này!"}
+
         # Xóa password để không bị lộ khi gửi về frontend
         user.pop("password", None)
 
         return {
             "success": True,
             "message": "Đăng nhập thành công",
-            "user": user
+            "user": user,
+            "houseid": house_id
         }
     except Exception as e:
         print(f"Lỗi đăng nhập: {e}")
         return {"success": False, "message": "Lỗi máy chủ nội bộ"}
 # =====================================================================
-
 
 @app.on_event("startup")
 async def startup_event():
