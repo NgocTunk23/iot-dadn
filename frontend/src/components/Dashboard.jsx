@@ -246,12 +246,13 @@ export default function Dashboard({ data }) {
   const [alerts, setAlerts] = useState([]);
   const [comparison, setComparison] = useState(null);
   const [trendData, setTrendData] = useState(null);
+  const houseid = localStorage.getItem('houseid') || 'HS001';
 
   // Fetch alerts & comparison once
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/sensor-alerts`);
+        const res = await axios.get(`${API_BASE}/sensor-alerts?houseid=${houseid}`);
         if (Array.isArray(res.data)) setAlerts(res.data);
       } catch {
         setAlerts([
@@ -268,7 +269,7 @@ export default function Dashboard({ data }) {
   useEffect(() => {
     const fetchComparison = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/sensor-comparison`);
+        const res = await axios.get(`${API_BASE}/sensor-comparison?houseid=${houseid}`);
         setComparison(res.data);
       } catch {
         setComparison({
@@ -287,7 +288,7 @@ export default function Dashboard({ data }) {
   useEffect(() => {
     const fetchTrend = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/realtime-trend`);
+        const res = await axios.get(`${API_BASE}/realtime-trend?houseid=${houseid}`);
         setTrendData(res.data);
       } catch {
         console.error('Lỗi tải dữ liệu xu hướng realtime');

@@ -10,8 +10,8 @@ router = APIRouter(prefix="/api")
 _dashboard_analytics = None
 
 # --- BIẾN GIÁM SÁT KẾT NỐI (UC001.3) ---
-last_sensor_update_time = None
-is_sensor_connected = False
+last_sensor_update_time = {}
+is_sensor_connected = {}
 connection_timeout_seconds = 30
 latest_sensor_data = {}
 
@@ -32,14 +32,15 @@ def update_latest_sensor_data(payload):
                 except (ValueError, TypeError):
                     dev["status"] = 0
                     
-    latest_sensor_data = payload
+    houseid = payload.get("houseid", "HS001")
+    latest_sensor_data[houseid] = payload
 
-def update_sensor_connection(now_vn):
+def update_sensor_connection(now_vn, houseid="HS001"):
     """Cập nhật thời điểm nhận dữ liệu mới nhất (gọi từ server.py)"""
     global last_sensor_update_time, is_sensor_connected
-    last_sensor_update_time = now_vn
-    if not is_sensor_connected:
-        is_sensor_connected = True
+    last_sensor_update_time[houseid] = now_vn
+    if not is_sensor_connected.get(houseid, False):
+        is_sensor_connected[houseid] = True
         return True # Trạng thái vừa thay đổi từ False sang True
     return False
 
@@ -50,35 +51,33 @@ async def check_sensor_connection():
     global is_sensor_connected, last_sensor_update_time
     while True:
         await asyncio.sleep(5)
-        if last_sensor_update_time and is_sensor_connected:
+        if last_sensor_update_time:
             tz_vn = timezone(timedelta(hours=7))
             now_vn = datetime.now(tz_vn)
-            # Chuyển last_sensor_update_time sang aware nếu chưa có tzinfo để so sánh
-            # (server.py đang dùng naive datetime cho DB nhưng aware cho so sánh)
-            # Tuy nhiên server.py truyền vào naive (now_vn.replace(tzinfo=None))
-            # Ta nên đồng bộ hết về naive hoặc aware. 
-            # Trong server.py doc ghi: now_vn = datetime.now(tz_vn).replace(tzinfo=None)
-            
-            diff = (now_vn.replace(tzinfo=None) - last_sensor_update_time).total_seconds()
-            
-            if diff > connection_timeout_seconds:
-                is_sensor_connected = False
-                print(f"--- !!! CẢNH BÁO: Mất kết nối cảm biến (quá {connection_timeout_seconds}s) !!! ---")
-                
-                # Ghi log nguy hiểm
-                if _dashboard_analytics and _dashboard_analytics.danger_collection is not None:
-                    danger_data = {
-                        "_id": now_vn,
-                        "time": now_vn, # MongoDB sẽ tự convert sang UTC
-                        "houseid": latest_sensor_data.get("houseid", "HS001"),
-                        "type": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
-                        "value": {}
-                    }
-                    try:
-                        await _dashboard_analytics.danger_collection.insert_one(danger_data)
-                        print("--- Đã lưu log mất kết nối vào database ---")
-                    except Exception as e:
-                        print(f"Lỗi ghi log mất kết nối: {e}")
+            for houseid, last_time in list(last_sensor_update_time.items()):
+                if is_sensor_connected.get(houseid, False):
+                    diff = (now_vn.replace(tzinfo=None) - last_time).total_seconds()
+                    
+                    if diff > connection_timeout_seconds:
+                        is_sensor_connected[houseid] = False
+                        print(f"--- !!! CẢNH BÁO: Mất kết nối cảm biến (quá {connection_timeout_seconds}s) tại nhà {houseid} !!! ---")
+                        
+                    # Ghi log nguy hiểm
+                    if _dashboard_analytics and _dashboard_analytics.danger_collection is not None:
+                        # ERD chuẩn hoá time UTC
+                        now_utc = datetime.now(timezone.utc)
+                        danger_data = {
+                            "_id": f"{now_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')}_{houseid}",
+                            "time": now_utc,
+                            "houseid": houseid,
+                            "type": f"Mất kết nối cảm biến (Quá {connection_timeout_seconds} giây)",
+                            "value": {}
+                        }
+                        try:
+                            await _dashboard_analytics.danger_collection.insert_one(danger_data)
+                            print(f"--- Đã lưu log mất kết nối cho nhà {houseid} vào database ---")
+                        except Exception as e:
+                            print(f"Lỗi ghi log mất kết nối: {e}")
 
 def start_monitoring():
     """Bắt đầu chạy background task giám sát"""
@@ -87,49 +86,50 @@ def start_monitoring():
 # --- ENDPOINTS MODULE 1 ---
 
 @router.get("/sensor-data")
-async def get_latest_data():
+async def get_latest_data(houseid: str = Query("HS001")):
     """
     UC001.2 - Xem thông số môi trường
     Trả về dữ liệu môi trường mới nhất cho giao diện web.
     """
     import module.module3 as module3
-    if not latest_sensor_data:
-        return {"temp": "--", "humi": "--", "light": "--", "time": "Chờ...", "connected": is_sensor_connected}
+    house_sensor_data = latest_sensor_data.get(houseid)
+    if not house_sensor_data:
+        return {"temp": "--", "humi": "--", "light": "--", "time": "Chờ...", "connected": is_sensor_connected.get(houseid, False)}
     
-    data_to_send = latest_sensor_data.copy()
+    data_to_send = house_sensor_data.copy()
     if "_id" in data_to_send:
         data_to_send["_id"] = str(data_to_send["_id"])
     #! Gửi thêm trạng thái thiết bị hiện tại cho Dashboard React
-    data_to_send["numberdevice"] = module3.device_status
+    data_to_send["numberdevice"] = module3.device_status_map.get(houseid, [])
     # Gửi trạng thái kết nối
-    data_to_send["connected"] = is_sensor_connected
+    data_to_send["connected"] = is_sensor_connected.get(houseid, False)
     return data_to_send
 
 @router.get("/sensor-comparison")
-async def get_sensor_comparison():
+async def get_sensor_comparison(houseid: str = Query("HS001")):
     """Trả về dữ liệu so sánh lấy từ DB."""
-    return await _dashboard_analytics.get_sensor_comparison_data()
+    return await _dashboard_analytics.get_sensor_comparison_data(houseid)
 
 @router.get("/weekly-trend")
-async def get_weekly_trend(period: str = Query("week")):
+async def get_weekly_trend(period: str = Query("week"), houseid: str = Query("HS001")):
     """Legacy endpoint — redirect to realtime."""
-    return await _dashboard_analytics.get_realtime_trend_data()
+    return await _dashboard_analytics.get_realtime_trend_data(houseid)
 
 @router.get("/realtime-trend")
-async def get_realtime_trend():
+async def get_realtime_trend(houseid: str = Query("HS001")):
     """Trả về dữ liệu xu hướng realtime từ DB."""
-    return await _dashboard_analytics.get_realtime_trend_data()
+    return await _dashboard_analytics.get_realtime_trend_data(houseid)
 
 @router.get("/sensor-alerts")
-async def get_sensor_alerts():
+async def get_sensor_alerts(houseid: str = Query("HS001")):
     """Trả về cảnh báo lấy từ collection nguy hiểm."""
-    return await _dashboard_analytics.get_sensor_alerts_data()
+    return await _dashboard_analytics.get_sensor_alerts_data(houseid)
 
 @router.get("/history-by-date")
-async def get_history_by_date(date: str = Query("2026-03-09")):
+async def get_history_by_date(date: str = Query("2026-03-09"), houseid: str = Query("HS001")):
     """Lấy lịch sử cảm biến theo ngày từ DB."""
     try:
-        cursor = _dashboard_analytics.sensor_collection.find({"date": date}).sort("_id", 1)
+        cursor = _dashboard_analytics.sensor_collection.find({"date": date, "houseid": houseid}).sort("time", 1)
         results = await cursor.to_list(length=100)
         for item in results:
             item["_id"] = str(item["_id"])
@@ -266,15 +266,15 @@ class DashboardAnalytics:
         self.danger_collection = danger_collection
         self.tz_vn = timezone(timedelta(hours=7))
 
-    async def get_sensor_comparison_data(self):
+    async def get_sensor_comparison_data(self, houseid="HS001"):
         now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
         today_start_str = now_vn.strftime("%Y-%m-%d")
         
         # 1. Đo thời gian hệ thống thật sự chạy bằng cách xem record cũ nhất và mới nhất
-        latest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", -1).limit(1)
+        latest_cursor = self.sensor_collection.find({"date": today_start_str, "houseid": houseid}).sort("time", -1).limit(1)
         latest_docs = await latest_cursor.to_list(1)
         
-        oldest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", 1).limit(1)
+        oldest_cursor = self.sensor_collection.find({"date": today_start_str, "houseid": houseid}).sort("time", 1).limit(1)
         oldest_docs = await oldest_cursor.to_list(1)
         
         if not latest_docs or not oldest_docs:
@@ -299,7 +299,7 @@ class DashboardAnalytics:
         elif diff_minutes < 60:
             # TH2: Đã chạy từ 5 phút đến 1 tiếng
             five_min_ago = current["time"] - timedelta(minutes=5)
-            old_cursor = self.sensor_collection.find({"time": {"$lte": five_min_ago}}).sort("time", -1).limit(1)
+            old_cursor = self.sensor_collection.find({"time": {"$lte": five_min_ago}, "houseid": houseid}).sort("time", -1).limit(1)
             old_docs = await old_cursor.to_list(1)
             
             if old_docs:
@@ -317,7 +317,7 @@ class DashboardAnalytics:
         else:
             # TH1: Chạy qua 1 tiếng
             pipeline_today = [
-                {"$match": {"date": today_start_str}},
+                {"$match": {"date": today_start_str, "houseid": houseid}},
                 {"$group": {
                     "_id": None,
                     "avg_temp": {"$avg": "$temp"},
@@ -340,16 +340,17 @@ class DashboardAnalytics:
                 "light": {"delta": 0, "label": "Chưa đủ dữ liệu"}
             }
 
-    async def get_realtime_trend_data(self):
-        # 1. ĐÃ SỬA: Thêm .replace(tzinfo=None) để khớp với DB
-        now_vn = datetime.now(self.tz_vn).replace(tzinfo=None)
+    async def get_realtime_trend_data(self, houseid="HS001"):
+        # 1. ĐÃ SỬA: Lấy thời gian UTC thực tế từ hệ thống để đồng bộ hoàn toàn với Mongo DB
+        now_utc = datetime.now(timezone.utc)
         intervals = [30, 25, 20, 15, 10, 5, 0]
         labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
         
-        today_start_str = now_vn.strftime("%Y-%m-%d")
+        # Tính ngày VN String từ now_utc để query column date (do server lưu string VN)
+        today_start_str = datetime.now(self.tz_vn).strftime("%Y-%m-%d")
         
         try:
-            oldest_cursor = self.sensor_collection.find({"date": today_start_str}).sort("time", 1).limit(1)
+            oldest_cursor = self.sensor_collection.find({"date": today_start_str, "houseid": houseid}).sort("time", 1).limit(1)
             oldest_docs = await oldest_cursor.to_list(1)
             
             if not oldest_docs:
@@ -361,8 +362,12 @@ class DashboardAnalytics:
                 
             oldest_time = oldest_docs[0]["time"]
             
-            # 2. ĐÃ SỬA: Xoá bỏ khối code check tzinfo cũ, trừ trực tiếp cực kỳ đơn giản
-            diff_total_minutes = (now_vn - oldest_time).total_seconds() / 60.0
+            # 2. ĐÃ SỬA: Đưa oldest_time về có tzinfo để so sánh nếu pymongo trả về tz-aware, 
+            # hoặc đưa now_utc về naive nếu pymongo trả về naive utc
+            if oldest_time.tzinfo is None:
+                now_utc = now_utc.replace(tzinfo=None)
+            
+            diff_total_minutes = (now_utc - oldest_time).total_seconds() / 60.0
             
             res_temp, res_humi, res_light = [], [], []
 
@@ -372,11 +377,12 @@ class DashboardAnalytics:
                     res_humi.append({"label": labels[idx], "value": 0})
                     res_light.append({"label": labels[idx], "value": 0})
                 else:
-                    target_time = now_vn - timedelta(minutes=mins)
+                    target_time = now_utc - timedelta(minutes=mins)
                     min_bound = target_time - timedelta(minutes=5)
                     
                     cursor = self.sensor_collection.find({
-                        "time": {"$gte": min_bound, "$lte": target_time}
+                        "time": {"$gte": min_bound, "$lte": target_time},
+                        "houseid": houseid
                     }).sort("time", -1).limit(1)
                     
                     docs = await cursor.to_list(1)
@@ -404,11 +410,11 @@ class DashboardAnalytics:
                 "light": [{"label": lb, "value": 0} for lb in labels]
             }
 
-    async def get_sensor_alerts_data(self):
+    async def get_sensor_alerts_data(self, houseid="HS001"):
         alerts = []
         if self.danger_collection is not None:
             try:
-                danger_docs = await self.danger_collection.find().sort("time", -1).limit(3).to_list(3)
+                danger_docs = await self.danger_collection.find({"houseid": houseid}).sort("time", -1).limit(3).to_list(3)
                 for doc in danger_docs:
                     t = doc.get("time")
                     

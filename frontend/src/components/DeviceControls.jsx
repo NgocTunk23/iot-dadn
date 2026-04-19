@@ -49,81 +49,83 @@ const IconFan = ({ speed }) => {
   );
 };
 
-/**
- * Shared device controls for both direct control (Khung 1) and mode editing (Khung 3).
- * @param {{ stateObj: object, updater: function }} props
- */
-export default function DeviceControls({ stateObj, updater }) {
-  const renderLight = (key, label) => (
-    <div className={`device-row ${stateObj[key].state ? 'device-active' : ''}`} key={key}>
-      <div className="device-row-header">
-        <div className="device-row-title"><IconLight active={stateObj[key].state} /> {label}</div>
-        <label className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={stateObj[key].state}
-            onChange={(e) => updater(key, 'state', e.target.checked)}
-          />
-          <span className="slider"></span>
-        </label>
-      </div>
-      {/* <div className="device-row-slider">
-        <input
-          type="range"
-          min="0" max="100"
-          value={stateObj[key].brightness}
-          onChange={(e) => updater(key, 'brightness', parseInt(e.target.value))}
-          disabled={!stateObj[key].state}
-          style={{ opacity: stateObj[key].state ? 1 : 0.5 }}
-        />
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: '2px' }}>
-          {stateObj[key].brightness}%
-        </div>
-      </div> */}
-    </div>
-  );
-
-  const fanLabel = stateObj.fan === 0 ? '0%'
-    : stateObj.fan === 1 ? '70%'
-      : stateObj.fan === 2 ? '80%'
-        : stateObj.fan === 3 ? '90%'
-          : '100%';
+export default function DeviceControls({ stateObj, updater, deviceList }) {
+  if (!deviceList || deviceList.length === 0) {
+    return <div className="device-list p-4 text-center text-gray-400">Đang tải thiết bị...</div>;
+  }
 
   return (
     <div className="device-list">
-      {/* {renderLight('light1', 'Đèn 1')} */}
-      {renderLight('light2', 'Đèn 2')}
-      {renderLight('light3', 'Đèn 3')}
-      {renderLight('light4', 'Đèn 4')}
+      {deviceList.map(dev => {
+        const devKey = dev.key;
+        const devState = stateObj[devKey];
 
-      {/* Servo */}
-      <div className={`device-row ${stateObj.servo === 'open' ? 'device-active' : ''}`}>
-        <div className="device-row-header">
-          <div className="device-row-title"><IconDoor state={stateObj.servo} /> Servo (Cửa)</div>
-        </div>
-        <div className="servo-btns">
-          <button className={`servo-btn ${stateObj.servo === 'close' ? 'active' : ''}`} onClick={() => updater('servo', null, 'close')}>Đóng</button>
-          <button className={`servo-btn ${stateObj.servo === 'open' ? 'active' : ''}`} onClick={() => updater('servo', null, 'open')}>Mở</button>
-        </div>
-      </div>
+        if (!devState) return null; // Still loading this device's state
 
-      {/* Fan */}
-      <div className={`device-row ${stateObj.fan > 0 ? 'device-active' : ''}`}>
-        <div className="device-row-header">
-          <div className="device-row-title"><IconFan speed={stateObj.fan} /> Quạt ({fanLabel})</div>
-        </div>
-        <div className="fan-levels">
-          {[0, 1, 2, 3, 4].map(level => (
-            <button
-              key={level}
-              className={`fan-level ${stateObj.fan === level ? 'active' : ''}`}
-              onClick={() => updater('fan', null, level)}
-            >
-              {level}
-            </button>
-          ))}
-        </div>
-      </div>
+        // --- Render Switch (Đèn) ---
+        if (dev.type === 'switch') {
+          return (
+            <div className={`device-row ${devState.state ? 'device-active' : ''}`} key={devKey}>
+              <div className="device-row-header">
+                <div className="device-row-title"><IconLight active={devState.state} /> {dev.label}</div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={devState.state}
+                    onChange={(e) => updater(devKey, 'state', e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </div>
+            </div>
+          );
+        }
+
+        // --- Render Servo (Cửa) ---
+        if (dev.type === 'servo') {
+          return (
+            <div className={`device-row ${devState === 'open' ? 'device-active' : ''}`} key={devKey}>
+              <div className="device-row-header">
+                <div className="device-row-title"><IconDoor state={devState} /> {dev.label}</div>
+              </div>
+              <div className="servo-btns">
+                <button className={`servo-btn ${devState === 'close' ? 'active' : ''}`} onClick={() => updater(devKey, null, 'close')}>Đóng</button>
+                <button className={`servo-btn ${devState === 'open' ? 'active' : ''}`} onClick={() => updater(devKey, null, 'open')}>Mở</button>
+              </div>
+            </div>
+          );
+        }
+
+        // --- Render Fan (Quạt) ---
+        if (dev.type === 'fan') {
+          const fanLabel = devState === 0 ? '0%'
+            : devState === 1 ? '70%'
+              : devState === 2 ? '80%'
+                : devState === 3 ? '90%'
+                  : '100%';
+
+          return (
+            <div className={`device-row ${devState > 0 ? 'device-active' : ''}`} key={devKey}>
+              <div className="device-row-header">
+                <div className="device-row-title"><IconFan speed={devState} /> {dev.label} ({fanLabel})</div>
+              </div>
+              <div className="fan-levels">
+                {[0, 1, 2, 3, 4].map(level => (
+                  <button
+                    key={level}
+                    className={`fan-level ${devState === level ? 'active' : ''}`}
+                    onClick={() => updater(devKey, null, level)}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        return null;
+      })}
     </div>
   );
 }

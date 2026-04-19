@@ -64,7 +64,7 @@ init_module4(
 
 # Biến toàn cục từ module được chia sẻ
 # Biến phụ để so sánh sự thay đổi log
-last_device_status = {item[0]: item[1] for item in shared_device_status}
+last_device_status = {} # Map by houseid -> {deviceNum: status}
 # Lưu trạng thái nguy hiểm để báo về Yolobit
 is_danger_global = False
 
@@ -82,21 +82,38 @@ app.include_router(module2_router)
 
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
-    global last_device_status, is_danger_global
+    global last_device_status
     tz_vn = timezone(timedelta(hours=7))
-    now_vn = datetime.now(tz_vn).replace(tzinfo=None)  #!
-
-    # Payload từ Yolobit main3.py có dạng:
+    now_vn_tz = datetime.now(tz_vn)
+    
+    # 1. FIX: Sử dụng giờ UTC thực tế cho MongoDB (tránh bị đội thêm +7h khi UI hiển thị),
+    # đồng thời giữ một bản gốc VN string để query date.
+    now_utc = datetime.now(timezone.utc)
+    common_time = now_utc
+    
     # { houseid: "HS001", temp: 30, humi: 60, light: 50, numberdevices: [{numberdevice: 1, status: True}, ...] }
     house_id = payload.get("houseid", "HS001")
     await sync_device_state(db.House, house_id, payload.get("numberdevices", []))
-    common_time = now_vn
-    payload["time"] = common_time  # Dùng làm PK / _id
-    payload["date"] = now_vn.strftime("%Y-%m-%d")  # Phục vụ Lọc API
+    
+    payload["time"] = common_time  # Dùng làm index Date
+    payload["date"] = now_vn_tz.strftime("%Y-%m-%d")  # Phục vụ Lọc API theo múi giờ NV
+    
+    # Chuẩn bị truy xuất thông tin House để lấy Type
+    house_config = await db.House.find_one({"_id.houseid": house_id})
+    house_devices = house_config.get("numberdevices", []) if house_config else []
+    dev_map = {d.get("numberdevice"): d for d in house_devices}
 
     # 1. Ghi vào bảng sensor_history
     sensor_entry = payload.copy()
-    sensor_entry["_id"] = common_time  # MongoDB PK
+    # ERD: PK là (time, houseid) -> tạo _id gộp 2 khóa này
+    sensor_entry["_id"] = f"{common_time.strftime('%Y-%m-%dT%H:%M:%S.%f')}_{house_id}" 
+    
+    # ERD: numberdevices CẦN phải có trường list {numberdevice, type, status}
+    if "numberdevices" in sensor_entry:
+        for idx in range(len(sensor_entry["numberdevices"])):
+            num = sensor_entry["numberdevices"][idx].get("numberdevice")
+            if "type" not in sensor_entry["numberdevices"][idx]:
+                sensor_entry["numberdevices"][idx]["type"] = dev_map.get(num, {}).get("type", "unknown")
 
     try:
         await collection.insert_one(sensor_entry)
@@ -108,11 +125,11 @@ async def handle_data(payload: dict = Body(...)):
         # UC001.3: Cập nhật connection status (Ủy quyền cho module1)
         import module.module1 as module1_mod
 
-        if module1_mod.update_sensor_connection(now_vn):
+        if module1_mod.update_sensor_connection(now_utc):
             print("--- Cảm biến đã KẾT NỐI lại ---")
 
         print(
-            f"--- Đã nhận dữ liệu từ Yolobit (House {house_id}) lúc: {now_vn.strftime('%H:%M:%S')} ---"
+            f"--- Đã nhận dữ liệu từ Yolobit (House {house_id}) lúc: {now_vn_tz.strftime('%H:%M:%S')} ---"
         )
 
         # 2. MODULE ĐIỀU KIỆN VƯỢT NGƯỠNG (Lấy tạm ngưỡng cứng, sau này lấy từ House DB)
@@ -131,14 +148,18 @@ async def handle_data(payload: dict = Body(...)):
 
         # Lấy tên kịch bản tự động đang chạy (nếu có)
         active_rule = app.state.rule_mgr.get_active_rule_name(house_id)
+        
+        if house_id not in last_device_status:
+             last_device_status[house_id] = {}
 
         for dev in devices_status_array:
             dev_num = dev.get("numberdevice")
             stat = dev.get("status")
 
-            if last_device_status.get(dev_num) != stat:
+            if last_device_status[house_id].get(dev_num) != stat:
+                dev_type = dev_map.get(dev_num, {}).get("type", "")
                 # Phân biệt lý do linh hoạt hơn
-                if dev_num == 1:
+                if dev_type == "denchongtrom":
                     reason_str = "Người dùng cấu hình chống trộm"
                 else:
                     if active_rule:
@@ -147,23 +168,25 @@ async def handle_data(payload: dict = Body(...)):
                         reason_str = "Người dùng điều khiển thủ công"
 
                 timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                dev_id_in_db = f"{timestamp_str}{dev_num}"
-                old_status = last_device_status.get(dev_num)
+                dev_id_in_db = f"{timestamp_str}{dev_num}_{house_id}"
+                old_status = last_device_status[house_id].get(dev_num)
 
                 device_log = {
                     "_id": dev_id_in_db,
                     "time": common_time,
                     "houseid": house_id,
                     "numberdevice": dev_num,
-                    "old_status": old_status,
-                    "new_status": stat,
+                    "type": dev_type,           # Bổ sung theo chuẩn ERD
+                    "status": stat,             # Bổ sung theo chuẩn ERD
+                    "old_status": old_status,   # Giữ lại legacy logic không xoá
+                    "new_status": stat,         # Giữ lại legacy logic
                     "reason": reason_str,
                 }
                 await device_log_collection.update_one(
                     {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
                 )
-                last_device_status[dev_num] = stat
-                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) ---")
+                last_device_status[house_id][dev_num] = stat
+                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) nhà {house_id} ---")
 
         # 3.2 GHI LOG KHI CẢM BIẾN PIR PHÁT HIỆN CÓ NGƯỜI (TÍN HIỆU NGẦM)
         pir_active = payload.get("pir_active")
@@ -182,6 +205,8 @@ async def handle_data(payload: dict = Body(...)):
                     "time": common_time,
                     "houseid": house_id,
                     "numberdevice": 1,  # Gắn mác ID 1 để hiện lên bảng log trên UI
+                    "type": "pir",      # Chuẩn hoá ERD
+                    "status": pir_active, # Chuẩn hoá ERD
                     "old_status": app.state.last_pir_state,
                     "new_status": pir_active,
                     "reason": reason_str,
@@ -205,12 +230,13 @@ async def handle_data(payload: dict = Body(...)):
 async def get_commands(houseid: str = Query("HS001")):
     # Trả về format mới: dict -> array of objects
     house = await db.House.find_one({"_id.houseid": houseid})
+    current_status = module3.device_status_map.get(houseid, [])
     commands_array = [
-        {"numberdevice": item[0], "status": item[1]} for item in module3.device_status
+        {"numberdevice": item[0], "status": item[1]} for item in current_status
     ]
     return {
         "numberdevices": commands_array,
-        "is_danger": is_danger_global,  # Push cờ nguy hiểm xuống Yolobit
+        "is_danger": app.state.is_danger_global if isinstance(app.state.is_danger_global, bool) else False,  # Push cờ nguy hiểm xuống Yolobit
     }
 
 
@@ -221,11 +247,11 @@ async def update_control(payload: dict = Body(...)):
     house_id = payload.get("houseid", "HS001")
     new_cmd = payload.get("commands")
     if new_cmd:
-        module3.device_status = new_cmd
-        app.state.device_status = new_cmd
+        module3.device_status_map[house_id] = new_cmd
+        # app.state.device_status = new_cmd # Deprecated using global dict natively
         from module.module2 import sync_device_state
         await sync_device_state(db.House, house_id, new_cmd)
-        print(f"--- Lệnh điều khiển mới: {module3.device_status} ---")
+        print(f"--- Lệnh điều khiển mới nhà {house_id}: {new_cmd} ---")
         return {"status": "Updated"}
     return {"status": "Error"}, 400
 

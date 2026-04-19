@@ -153,8 +153,11 @@ export default function DevicesTab({
   selectedDevices,
   updateDraftDevice,
   SCENE_DEVICE_KEYS,
+  antiTheftId,
 }) {
   const isEditing = draftMode && modes.find(m => m.id === draftMode.id);
+  const antiTheftKey = antiTheftId ? `device_${antiTheftId}` : null;
+  const antiTheftState = antiTheftKey ? deviceStates[antiTheftKey] : null;
 
   return (
     <>
@@ -165,34 +168,36 @@ export default function DevicesTab({
           <div className="column-left">
             <div className="control-panel">
               <h3 className="panel-title">Điều khiển Thiết bị</h3>
-              <DeviceControls stateObj={deviceStates} updater={updateDevice} />
+              <DeviceControls stateObj={deviceStates} updater={updateDevice} deviceList={SCENE_DEVICE_KEYS} />
             </div>
 
             {/* KHUNG CHỐNG TRỘM */}
-            <div className="control-panel anti-theft-panel">
-              <div className="anti-theft-header">
-                <div className="anti-theft-info">
-                  <IconShield active={deviceStates.light1?.state} />
-                  <div>
-                    <h3 className="anti-theft-title">Chế độ Chống trộm</h3>
-                    <p className="anti-theft-subtitle">Đèn 1 kết hợp cảm biến PIR</p>
+            {antiTheftKey && (
+              <div className="control-panel anti-theft-panel">
+                <div className="anti-theft-header">
+                  <div className="anti-theft-info">
+                    <IconShield active={antiTheftState?.state} />
+                    <div>
+                      <h3 className="anti-theft-title">Chế độ Chống trộm</h3>
+                      <p className="anti-theft-subtitle">Đèn chống trộm kết hợp cảm biến PIR</p>
+                    </div>
                   </div>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={antiTheftState?.state || false}
+                      onChange={(e) => updateDevice(antiTheftKey, 'state', e.target.checked)}
+                    />
+                    <span className="slider"></span>
+                  </label>
                 </div>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={deviceStates.light1.state}
-                    onChange={(e) => updateDevice('light1', 'state', e.target.checked)}
-                  />
-                  <span className="slider"></span>
-                </label>
+                <p className="anti-theft-note">
+                  {antiTheftState?.state
+                    ? '🟢 Đang bật — Đèn sẽ phản hồi khi cảm biến PIR phát hiện chuyển động'
+                    : '⚪ Đang tắt — Cảm biến PIR vẫn ghi nhận nhưng đèn không phản hồi'}
+                </p>
               </div>
-              <p className="anti-theft-note">
-                {deviceStates.light1.state
-                  ? '🟢 Đang bật — Đèn 1 sẽ phản hồi khi cảm biến PIR phát hiện chuyển động'
-                  : '⚪ Đang tắt — Cảm biến PIR vẫn ghi nhận nhưng đèn không phản hồi'}
-              </p>
-            </div>
+            )}
           </div>
 
           {/* ═══════ KHUNG 2: DANH SÁCH CHẾ ĐỘ ═══════ */}
@@ -318,15 +323,15 @@ export default function DevicesTab({
                     <div key={dev.id} className="scene-device-config-item">
                       {/* ─── SWITCH (Đèn) ─── */}
                       {dev.type === 'switch' && (
-                        <div className={`device-row ${dev.state.state ? 'device-active' : ''}`}>
+                        <div className={`device-row ${dev.state?.state ? 'device-active' : ''}`}>
                           <div className="device-row-header">
                             <div className="device-row-title">
-                              <IconLight active={dev.state.state} /> {dev.label}
+                              <IconLight active={dev.state?.state} /> {dev.label}
                             </div>
                             <label className="toggle-switch">
                               <input
                                 type="checkbox"
-                                checked={dev.state.state}
+                                checked={dev.state?.state || false}
                                 onChange={(e) => updateDraftDevice(dev.id, 'state', e.target.checked)}
                               />
                               <span className="slider"></span>

@@ -12,7 +12,8 @@ export default function useSensorData() {
   useEffect(() => {
     const fetchSensorData = async () => {
       try {
-        const response = await axios.get(API_URL);
+        const houseid = localStorage.getItem('houseid') || 'HS001';
+        const response = await axios.get(`${API_URL}?houseid=${houseid}`);
         if (response.status === 200) {
           setData({ ...response.data, connected: response.data.connected !== false });
           setError(null);
