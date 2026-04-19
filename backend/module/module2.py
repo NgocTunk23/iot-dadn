@@ -34,42 +34,72 @@ HOUSE_THRESHOLD_FIELDS = {
 
 
 # ══════════════════════════════════════════════════════════════════
-#  Hàm helper: đảm bảo House tồn tại
+#  Hàm helper: khởi tạo data mặc định cho house đã có sẵn trong DB
 # ══════════════════════════════════════════════════════════════════
 async def ensure_house_default(house_col, houseid: str, username: str = ""):
+    
     house = await house_col.find_one({"_id.houseid": houseid})
     if not house:
-        now = datetime.now(VN_TZ).replace(tzinfo=None)
-        DEFAULT_NUMBERDEVICES = [
-            {"numberdevice": 1, "type": "denchongtrom", "status": False},
-            {"numberdevice": 2, "type": "den",           "status": False},
-            {"numberdevice": 3, "type": "den",           "status": False},
-            {"numberdevice": 4, "type": "den",           "status": False},
-            {"numberdevice": 6, "type": "servo",         "status": 0},
-            {"numberdevice": 7, "type": "quat",          "status": 0},
-        ]
-        default_house = {
-            "_id":              {"houseid": houseid, "username": username},
-            "tempmin":          DEFAULT_THRESHOLDS["temp"]["min"],
-            "tempmax":          DEFAULT_THRESHOLDS["temp"]["max"],
-            "humimin":          DEFAULT_THRESHOLDS["humi"]["min"],
-            "humimax":          DEFAULT_THRESHOLDS["humi"]["max"],
-            "lightmin":         DEFAULT_THRESHOLDS["light"]["min"],
-            "lightmax":         DEFAULT_THRESHOLDS["light"]["max"],
-            "emailtowarning":   "",
-            "email_enabled":    False,
-            "teletowarning":    {"token": "", "id": ""},
-            "telegram_enabled": False,
-            "numberdevices":    DEFAULT_NUMBERDEVICES,
-            "createdat":        now,
-        }
-        await house_col.insert_one(default_house)
-        print(f"[MODULE2] Đã tạo House mặc định: {houseid}")
+        print(f"[MODULE2] House '{houseid}' không tồn tại trong DB.")
+        return None
+
+    DEFAULT_NUMBERDEVICES = [
+        {"numberdevice": 1, "type": "denchongtrom", "status": False},
+        {"numberdevice": 2, "type": "den",           "status": False},
+        {"numberdevice": 3, "type": "den",           "status": False},
+        {"numberdevice": 4, "type": "den",           "status": False},
+        {"numberdevice": 6, "type": "servo",         "status": 0},
+        {"numberdevice": 7, "type": "quat",          "status": 0},
+    ]
+    
+    DEFAULTS_MAP = {
+        "tempmin":          DEFAULT_THRESHOLDS["temp"]["min"],
+        "tempmax":          DEFAULT_THRESHOLDS["temp"]["max"],
+        "humimin":          DEFAULT_THRESHOLDS["humi"]["min"],
+        "humimax":          DEFAULT_THRESHOLDS["humi"]["max"],
+        "lightmin":         DEFAULT_THRESHOLDS["light"]["min"],
+        "lightmax":         DEFAULT_THRESHOLDS["light"]["max"],
+        "emailtowarning":   "",
+        "email_enabled":    False,
+        "teletowarning":    {"token": "", "id": ""},
+        "telegram_enabled": False,
+        "numberdevices":    DEFAULT_NUMBERDEVICES,
+    }
+
+    missing_fields = {k: v for k, v in DEFAULTS_MAP.items() if k not in house}
+
+    if missing_fields:
+        ordered_house = {}
+        
+        ordered_house["_id"] = house["_id"]
+        
+        for key, default_val in DEFAULTS_MAP.items():
+            ordered_house[key] = house.get(key, default_val)
+            
+        ordered_house["createdat"] = house.get("createdat", datetime.now(VN_TZ).replace(tzinfo=None))
+        
+        for key, val in house.items():
+            if key not in ordered_house:
+                ordered_house[key] = val
+
+        await house_col.replace_one(
+            {"_id.houseid": houseid},
+            ordered_house
+        )
+        print(f"[MODULE2] Điền data mặc định và sắp xếp lại cho House '{houseid}': {list(missing_fields.keys())}")
+        
+        return ordered_house
+
+    return house
 
 
-# Backward-compat: gọi khi server startup với HS001
+# Gọi lúc server startup: quét tất cả house đã có trong DB và điền data mặc định nếu thiếu
 async def initialize_default_house(house_col):
-    await ensure_house_default(house_col, "HS001")
+    cursor = house_col.find({})
+    async for house in cursor:
+        hid = house.get("_id", {}).get("houseid")
+        if hid:
+            await ensure_house_default(house_col, hid)
 
 async def sync_device_state(house_col, house_id: str, updates: list):
     house = await house_col.find_one({"_id.houseid": house_id})
@@ -585,20 +615,39 @@ async def process_danger_and_rules(app, payload: dict, house_id: str):
         "humi":  payload.get("humi",  0),
         "light": payload.get("light", 0),
     }
+    
+    # 1. Tự động tạo bảng/cấu hình mặc định nếu nhà mới chưa tồn tại trong DB
+    await ensure_house_default(threshold_mgr.house_col, house_id)
+    
     thresholds = await threshold_mgr.get_thresholds(house_id)
     result     = DangerChecker.check(sensor_data, thresholds)
     is_danger  = result["is_danger"]
-    app.state.is_danger_global = is_danger
+    
+    # 2. Xử lý Multi-tenant cho cờ cảnh báo (is_danger_global)
+    if not hasattr(app.state, "is_danger_global") or not isinstance(app.state.is_danger_global, dict):
+        app.state.is_danger_global = {}
+    app.state.is_danger_global[house_id] = is_danger
+
+    # 3. Xử lý Multi-tenant cho trạng thái thiết bị (device_status)
+    if not hasattr(app.state, "device_status") or not isinstance(app.state.device_status, dict):
+        app.state.device_status = {}
+        
+    # Lấy trạng thái cũ của nhà này, nếu chưa có thì khởi tạo mảng thiết bị mặc định
+    current_status = app.state.device_status.get(house_id, [[1, False], [2, False], [3, False], [4, False], [6, 0], [7, 0]])
 
     new_status, triggered_rules = await rule_mgr.evaluate_and_apply(
-        house_id, sensor_data, app.state.device_status
+        house_id, sensor_data, current_status
     )
-    state_changed = new_status != app.state.device_status
-    app.state.device_status = new_status
+    state_changed = new_status != current_status
+    
+    # Cập nhật lại trạng thái mới theo đúng nhà
+    app.state.device_status[house_id] = new_status
+    
     if triggered_rules or state_changed:
         await sync_device_state(threshold_mgr.house_col, house_id, new_status)
         label = triggered_rules[0]['rule_name'] if triggered_rules else "thay đổi trạng thái"
-        print(f"[MODULE2] Đã lưu trạng thái '{label}' vào DB.")
+        print(f"[MODULE2] Đã lưu trạng thái '{label}' của {house_id} vào DB.")
+        
     if is_danger:
         has_changes = any(
             c.get("changed")
@@ -617,12 +666,12 @@ async def process_danger_and_rules(app, payload: dict, house_id: str):
 
         await alert_dispatcher.dispatch(
             house_id, result["violations"], sensor_data,
-            app.state.device_status,
+            app.state.device_status[house_id],
             triggered_rules=triggered_rules,
         )
     else:
         await alert_dispatcher.auto_stop_alert(
-            house_id, app.state.device_status, False
+            house_id, app.state.device_status[house_id], False
         )
 
     return is_danger, new_status
@@ -737,9 +786,17 @@ async def toggle_automation_rule(request: Request, payload: dict = Body(...)):
 
 @router.get("/check-danger")
 async def check_danger_now(request: Request, houseid: str = "HS001"):
-    latest = getattr(request.app.state, "latest_sensor_data", None)
+    latest_all = getattr(request.app.state, "latest_sensor_data", {})
+    
+    # Lọc data đúng của nhà đang yêu cầu (hỗ trợ quá trình chuyển đổi dần trên server.py)
+    if isinstance(latest_all, dict) and "houseid" in latest_all:
+        latest = latest_all if latest_all.get("houseid") == houseid else None
+    else:
+        latest = latest_all.get(houseid) if isinstance(latest_all, dict) else None
+        
     if not latest:
-        return {"is_danger": False, "message": "Chưa có dữ liệu cảm biến."}
+        return {"is_danger": False, "message": f"Chưa có dữ liệu cảm biến cho nhà {houseid}."}
+        
     mgr         = request.app.state.threshold_mgr
     thresholds  = await mgr.get_thresholds(houseid)
     sensor_data = {k: latest.get(k, 0) for k in ("temp", "humi", "light")}
@@ -769,6 +826,12 @@ async def get_danger_logs(request: Request, houseid: str = "HS001", limit: int =
 @router.post("/stop-alert")
 async def manual_stop_alert(request: Request, payload: dict = Body(...)):
     houseid = payload.get("houseid", "HS001")
-    request.app.state.is_danger_global = False
-    print(f"[MODULE2] TẮT báo động thủ công (house: {houseid})")
-    return {"status": "success", "message": "Đã tắt báo động."}
+    
+    # Chỉ tắt báo động riêng biệt cho ID nhà được truyền xuống
+    if hasattr(request.app.state, "is_danger_global") and isinstance(request.app.state.is_danger_global, dict):
+        request.app.state.is_danger_global[houseid] = False
+    else:
+        request.app.state.is_danger_global = {houseid: False}
+        
+    print(f"[MODULE2] TẮT báo động thủ công riêng cho nhà: {houseid}")
+    return {"status": "success", "message": f"Đã tắt báo động cho {houseid}."}
