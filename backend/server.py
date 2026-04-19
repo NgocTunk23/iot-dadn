@@ -19,7 +19,7 @@ from module.module3 import (
     SceneManager,
     init_module3,
     router as module3_router,
-    device_status as shared_device_status,
+    #device_status as shared_device_status,
 )
 import module.module3 as module3
 from module.module1 import DashboardAnalytics, init_module1, router as module1_router
@@ -71,7 +71,7 @@ is_danger_global = False
 init_module2(
     app, threshold_mgr, channel_mgr, rule_mgr, alert_dispatcher, danger_collection
 )
-app.state.device_status = shared_device_status
+app.state.device_status = module3.device_status_map
 app.state.is_danger_global = False
 app.state.latest_sensor_data = {}
 app.state.last_pir_state = False
@@ -141,7 +141,7 @@ async def handle_data(payload: dict = Body(...)):
             app, payload, house_id
         )
         is_danger_global = is_danger_val
-        module3.device_status = new_status_val
+        module3.device_status_map[house_id] = new_status_val
 
         # 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM CÔNG TẮC HOẶC TỰ ĐỘNG
         devices_status_array = payload.get("numberdevices", [])
