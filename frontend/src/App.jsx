@@ -25,7 +25,7 @@ function App() {
   // 1. Thêm State quản lý trạng thái đăng nhập
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userData, setUserData] = useState(null);
-
+  const [houseId, setHouseId] = useState('HS001');
   const [activeTab, setActiveTab] = useState('dashboard');
   const { data } = useSensorData();
   const { messages, addToast, dismissToast } = useToast();
@@ -38,6 +38,7 @@ function App() {
     const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
 
     if (storedHouseId && storedUser) {
+      setHouseId(storedHouseId);
       setUserData(JSON.parse(storedUser));
       setIsAuthenticated(true);
     }
@@ -46,6 +47,9 @@ function App() {
   const handleLogout = () => {
     setIsAuthenticated(false); // Ép React hiển thị lại <Login />
     setUserData(null);         // Xóa dữ liệu user trong state
+    localStorage.removeItem('houseid');
+    localStorage.removeItem('user');
+    localStorage.removeItem('username');
     setActiveTab('dashboard'); // Tiện tay reset tab về dashboard cho lần đăng nhập sau
   };
 
@@ -69,9 +73,11 @@ const handleLoginSubmit = async (credentials) => {
 
     if (data.success) {
       setUserData(data.user);
+      setHouseId(data.houseid);
       setIsAuthenticated(true);
       // Lưu đúng houseid mà backend đã xác nhận
-      localStorage.setItem('houseid', data.houseid); 
+      localStorage.setItem('houseid', data.houseid);
+      localStorage.setItem('user',     JSON.stringify(data.user)); 
       localStorage.setItem('username', JSON.stringify( data.user._id ));
     } else {
       alert(data.message);
@@ -109,7 +115,7 @@ const handleLoginSubmit = async (credentials) => {
 
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'devices' && <DevicesTab {...devices} />}
-        {activeTab === 'alerts' && <AlertTab addToast={addToast} />}
+        {activeTab === 'alerts' && <AlertTab houseId={houseId} addToast={addToast}/>}
         {activeTab === 'settings' && <SettingsTab onLogout={handleLogout} />}
         
       </div>

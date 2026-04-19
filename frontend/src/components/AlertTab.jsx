@@ -431,7 +431,7 @@ function DualThresholdSlider({ sensor, draft, setDraft, setActiveThumb, activeTh
   );
 }
 
-function ThresholdTab({ addToast }) {
+function ThresholdTab({ houseId, addToast }) {
   const SENSORS = [
     { key: 'temp',  label: 'Nhiệt độ', unit: '°C', min: -50, max: 500 },
     { key: 'humi',  label: 'Độ ẩm',    unit: '%',  min: 0,   max: 100 },
@@ -446,15 +446,16 @@ function ThresholdTab({ addToast }) {
   const getNum = (v, fallback) => { const n = typeof v === 'string' ? parseFloat(v) : v; return Number.isFinite(n) ? n : fallback; };
 
   useEffect(() => {
-    axios.get(`${API}/thresholds?houseid=HS001`)
+    if (!houseId) return;
+    axios.get(`${API}/thresholds?houseid=${houseId}`)
       .then(r => { setThresholds(r.data); setDraft(JSON.parse(JSON.stringify(r.data))); })
       .catch(() => setDraft(JSON.parse(JSON.stringify(thresholds))));
-  }, []);
+  }, [houseId]);
 
   const handleSave = async (sensor) => {
     setSaving(true);
     try {
-      await axios.post(`${API}/thresholds`, { houseid: 'HS001', sensor, min: parseFloat(draft[sensor].min), max: parseFloat(draft[sensor].max) });
+      await axios.post(`${API}/thresholds`, { houseid: houseId, sensor, min: parseFloat(draft[sensor].min), max: parseFloat(draft[sensor].max) });
       setThresholds(prev => ({ ...prev, [sensor]: draft[sensor] }));
       addToast(`✅ Đã cập nhật ngưỡng ${SENSORS.find(s=>s.key===sensor)?.label}!`, 'success');
     } catch (e) { addToast(e.response?.data?.message || 'Lỗi cập nhật ngưỡng!', 'error'); }
@@ -463,7 +464,7 @@ function ThresholdTab({ addToast }) {
 
   const handleReset = async () => {
     try {
-      const r = await axios.post(`${API}/thresholds/reset`, { houseid: 'HS001' });
+      const r = await axios.post(`${API}/thresholds/reset`, { houseid: houseId });
       setThresholds(r.data.thresholds); setDraft(JSON.parse(JSON.stringify(r.data.thresholds)));
       addToast('✅ Đã reset ngưỡng về mặc định!', 'success');
     } catch { addToast('Lỗi reset ngưỡng!', 'error'); }
@@ -799,22 +800,23 @@ function ThresholdTab({ addToast }) {
 
 /* ─────────────────── 2. KÊNH THÔNG BÁO ─────────────────── */
 /* ─────────────────── 2. KÊNH THÔNG BÁO ─────────────────── */
-function ChannelTab({ addToast }) {
+function ChannelTab({ houseId, addToast }) {
   const [channels, setChannels] = useState({ telegram: { enabled: false }, email: { enabled: false } });
   const [draft, setDraft]       = useState(null);
   const [saving, setSaving]     = useState('');
   const prevDraftRef = useRef(null);
 
   useEffect(() => {
-    axios.get(`${API}/notification-channels?houseid=HS001`)
+    if (!houseId) return;
+    axios.get(`${API}/notification-channels?houseid=${houseId}`)
       .then(r => { setChannels(r.data); const d = JSON.parse(JSON.stringify(r.data)); setDraft(d); prevDraftRef.current = JSON.parse(JSON.stringify(d)); })
       .catch(() => { const d = { telegram: { enabled: false }, email: { enabled: false } }; setDraft(d); prevDraftRef.current = JSON.parse(JSON.stringify(d)); });
-  }, []);
+  }, [houseId]);
 
   const handleSave = async (channel) => {
     setSaving(channel);
     const d = draft[channel] || {};
-    const body = { houseid: 'HS001', channel, enabled: d.enabled };
+    const body = { houseid: houseId, channel, enabled: d.enabled };
     if (channel === 'telegram') { body.bot_token = d.bot_token || ''; body.chat_id = d.chat_id || ''; }
     if (channel === 'email')    { body.address = d.address || ''; }
     try {
@@ -833,7 +835,7 @@ function ChannelTab({ addToast }) {
     setField(channel, 'enabled', newVal);
     setSaving(channel);
     const d = { ...(draft[channel] || {}), enabled: newVal };
-    const body = { houseid: 'HS001', channel, enabled: newVal };
+    const body = { houseid: houseId, channel, enabled: newVal };
     if (channel === 'telegram') { body.bot_token = d.bot_token || ''; body.chat_id = d.chat_id || ''; }
     if (channel === 'email')    { body.address = d.address || ''; }
     try {
@@ -1002,7 +1004,7 @@ const StatusPicker = ({ value, onChange, accentColor = '#10b981' }) => {
   );
 };
 
-function AutoRuleTab({ addToast }) {
+function AutoRuleTab({ houseId, addToast }) {
   const [duplicateModal, setDuplicateModal] = useState(null);
   const [duplicateNameModal, setDuplicateNameModal] = useState(null);
   const [rules, setRules]       = useState([]);
@@ -1015,8 +1017,9 @@ function AutoRuleTab({ addToast }) {
   const [showDevicePicker, setShowDevicePicker] = useState(false);
 
   const fetchRules = useCallback(async () => {
-    try { const r = await axios.get(`${API}/automation-rules?houseid=HS001`); setRules(r.data || []); } catch {}
-  }, []);
+    if (!houseId) return;
+    try { const r = await axios.get(`${API}/automation-rules?houseid=${houseId}`); setRules(r.data || []); } catch {}
+  }, [houseId]);
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
@@ -1058,7 +1061,7 @@ function AutoRuleTab({ addToast }) {
     setSaving(true);
     try {
       await axios.post(`${API}/automation-rules`, {
-        houseid: "HS001",
+        houseid: houseId, 
         name: draft.name.trim(),
         original_name: editName,
         original_id: editId,
@@ -1094,7 +1097,7 @@ function AutoRuleTab({ addToast }) {
     setSaving(true);
     try {
       await axios.post(`${API}/automation-rules`, {
-        houseid: "HS001",
+        houseid: houseId,
         name: draft.name.trim(),
         original_name: editName,
         original_id: editId,
@@ -1117,12 +1120,12 @@ function AutoRuleTab({ addToast }) {
 
   const handleDelete = async (name) => {
     if (!window.confirm(`Xóa kịch bản "${name}"?`)) return;
-    try { await axios.delete(`${API}/automation-rules`, { params: { houseid: 'HS001', name } }); addToast(`Đã xóa "${name}".`, 'info'); fetchRules(); }
+    try { await axios.delete(`${API}/automation-rules`, { params: { houseid: houseId, name } }); addToast(`Đã xóa "${name}".`, 'info'); fetchRules(); }
     catch { addToast('Lỗi xóa kịch bản!', 'error'); }
   };
 
   const handleToggle = async (rule) => {
-    try { await axios.patch(`${API}/automation-rules/toggle`, { houseid: 'HS001', name: rule.name, enabled: !rule.enabled }); fetchRules(); }
+    try { await axios.patch(`${API}/automation-rules/toggle`, { houseid: houseId, name: rule.name, enabled: !rule.enabled }); fetchRules(); }
     catch { addToast('Lỗi thay đổi trạng thái!', 'error'); }
   };
 
@@ -2245,18 +2248,20 @@ const TABS = [
  * @param {function} onDeviceUpdate - callback(numberdevice: Array) để App cập nhật deviceStates
  *   Được gọi khi phát hiện kịch bản backend vừa thay đổi trạng thái thiết bị.
  */
-export default function AlertTab({ addToast, onDeviceUpdate }) {
+
+export default function AlertTab({ houseId, addToast, onDeviceUpdate }) {
   const [sub, setSub] = useState('threshold');
+  
   useEffect(() => {
-    if (!onDeviceUpdate) return;
+    if (!onDeviceUpdate || !houseId) return; // Thêm điều kiện kiểm tra houseId
     let prevState = null;
     const checkBackend = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/sensor-data');
+        // Truyền dynamic houseId vào API
+        const res = await axios.get(`http://localhost:5000/api/sensor-data?houseid=${houseId}`);
         if (res.data && res.data.numberdevice) {
           const currState = JSON.stringify(res.data.numberdevice);
           if (prevState && prevState !== currState) {
-            // Kịch bản vừa chạy → notify App cập nhật deviceStates
             onDeviceUpdate(res.data.numberdevice);
           }
           prevState = currState;
@@ -2265,15 +2270,16 @@ export default function AlertTab({ addToast, onDeviceUpdate }) {
     };
     const timer = setInterval(checkBackend, 2000);
     return () => clearInterval(timer);
-  }, [onDeviceUpdate]);
+  }, [onDeviceUpdate, houseId]); // Thêm houseId vào dependency
 
   return (
     <div>
       <InjectCSS />
       <TabBar tabs={TABS} active={sub} onChange={setSub} />
-      {sub === 'threshold' && <ThresholdTab addToast={addToast} />}
-      {sub === 'channel'   && <ChannelTab   addToast={addToast} />}
-      {sub === 'rules'     && <AutoRuleTab  addToast={addToast} />}
+      {/* Truyền houseId xuống các tab con */}
+      {sub === 'threshold' && <ThresholdTab houseId={houseId} addToast={addToast} />}
+      {sub === 'channel'   && <ChannelTab   houseId={houseId} addToast={addToast} />}
+      {sub === 'rules'     && <AutoRuleTab  houseId={houseId} addToast={addToast} />}
     </div>
   );
 }
