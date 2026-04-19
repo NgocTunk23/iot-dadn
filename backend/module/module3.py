@@ -4,20 +4,16 @@ from datetime import datetime, timezone, timedelta
 # Khởi tạo Router cho Module 3
 router = APIRouter(prefix="/api")
 
-# --- ÁNH XẠ THIẾT BỊ (theo ERD: type = den, quat, servo, denchongtrom) ---
-DEVICE_TYPE_MAP = {
-    1: {"type": "denchongtrom", "name": "Đèn chống trộm"},
-    2: {"type": "den", "name": "Đèn 2"},
-    3: {"type": "den", "name": "Đèn 3"},
-    4: {"type": "den", "name": "Đèn 4"},
-    6: {"type": "servo", "name": "Cửa (Servo)"},
-    7: {"type": "quat", "name": "Quạt"},
-}
+def get_default_device_name(dev_num, dev_type):
+    if dev_type == "denchongtrom": return "Đèn chống trộm"
+    if dev_type == "servo": return "Cửa (Servo)"
+    if dev_type == "quat": return "Quạt"
+    if dev_type == "den": return f"Đèn {dev_num}"
+    return f"Thiết bị {dev_num}"
 
-def format_device_status(numberdevice, status):
+def format_device_status(numberdevice, status, dev_type="unknown"):
     """Chuyển status thô thành text có ý nghĩa dựa trên type thiết bị."""
-    info = DEVICE_TYPE_MAP.get(numberdevice, {"type": "unknown", "name": f"Thiết bị {numberdevice}"})
-    dev_type = info["type"]
+    name = get_default_device_name(numberdevice, dev_type)
     if dev_type in ("den", "denchongtrom"):
         status_text = "Bật" if status else "Tắt"
     elif dev_type == "servo":
@@ -26,10 +22,10 @@ def format_device_status(numberdevice, status):
         status_text = "Chạy" if (isinstance(status, int) and status > 0) else "Tắt"
     else:
         status_text = str(status)
-    return {**info, "numberdevice": numberdevice, "status": status, "status_text": status_text}
+    return {"type": dev_type, "name": name, "numberdevice": numberdevice, "status": status, "status_text": status_text}
 
-# Biến toàn cục cho thiết bị (được chia sẻ với server.py)
-device_status = [[1, False], [2, False], [3, False], [4, False], [6, 0], [7, 0]]
+# Biến toàn cục từ điển thiết bị
+device_status_map = {}
 
 _scene_manager = None
 _house_col = None  # db.House — để đọc numberdevices theo houseid
@@ -48,18 +44,30 @@ class SceneManager:
         """
         Lưu cấu hình kịch bản vào MongoDB.
         action format: [{"numberdevice": 2, "status": True}, {"numberdevice": 6, "status": 50}]
+        ERD yêu cầu: action phải có type: [{"numberdevice": 2, "type": "den", "status": True}, ...]
         """
+        # Inject Type vào action nếu thiếu
+        if _house_col:
+            house_config = await _house_col.find_one({"_id.houseid": houseid})
+            if house_config:
+                house_devices = house_config.get("numberdevices", [])
+                dev_map = {d.get("numberdevice"): d for d in house_devices}
+                for item in action:
+                    dev_num = item.get("numberdevice")
+                    if "type" not in item:
+                        item["type"] = dev_map.get(dev_num, {}).get("type", "unknown")
+
         scene_data = {
             "houseid": houseid,
             "name": name,
             "action": action,
             "isactive": isactive,
-            "createdat": datetime.now(self.tz_vn)
+            "createdat": datetime.now(timezone.utc) # UTC chuẩn hoá
         }
         
         try:
             await self.scenes_collection.update_one(
-                {"name": name},
+                {"houseid": houseid, "name": name}, # Phải kèm houseid để đa người dùng
                 {"$set": scene_data},
                 upsert=True
             )
@@ -84,10 +92,23 @@ class SceneManager:
             print(f"Error fetching scene: {e}")
             return None
 
-def apply_scene_to_status(current_status, actions):
+async def get_servo_ids_for_house(house_col, houseid):
+    if not house_col: return [6] # Fallback if col not initialized
+    try:
+        house = await house_col.find_one({"_id.houseid": houseid})
+        if house and "numberdevices" in house:
+            return [d["numberdevice"] for d in house["numberdevices"] if d.get("type", "") == "servo"]
+    except Exception:
+        pass
+    return [6]
+
+def apply_scene_to_status(current_status, actions, servo_ids=None):
     """
     Hàm helper: Trộn lệnh của kịch bản vào mảng device_status hiện tại.
     """
+    if servo_ids is None:
+        servo_ids = [6]
+        
     status_dict = {item[0]: item[1] for item in current_status}
     
     for act in actions:
@@ -95,8 +116,8 @@ def apply_scene_to_status(current_status, actions):
         dev_id = act.get("device_id", act.get("numberdevice"))
         val = act.get("value", act.get("status"))
         if dev_id is not None and val is not None:
-            # Chuẩn hóa Servo (ID 6) về 0/90 để đảm bảo tính nhất quán
-            if dev_id == 6:
+            # Chuẩn hóa Servo về 0/90 để đảm bảo tính nhất quán
+            if dev_id in servo_ids:
                 try:
                     val = 90 if int(val) >= 45 else 0
                 except (ValueError, TypeError):
@@ -125,7 +146,7 @@ async def create_scene(payload: dict = Body(...)):
 
 @router.post("/activate-scene")
 async def activate_scene_endpoint(payload: dict = Body(...)):
-    global device_status
+    global device_status_map
     name = payload.get("name")
     if not name:
         return {"status": "Error", "message": "Missing name"}, 400
@@ -134,15 +155,20 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
     if actions is None:
         return {"status": "Error", "message": "Scene not found"}, 404
         
-    device_status = apply_scene_to_status(device_status, actions)
-    print(f"--- Kích hoạt kịch bản '{name}'. Lệnh mới: {device_status} ---")
-    return {"status": "Success", "new_commands": device_status}
+    houseid = payload.get("houseid", "HS001")
+    current_status = device_status_map.get(houseid, [])
+    
+    servo_ids = await get_servo_ids_for_house(_house_col, houseid)
+    device_status_map[houseid] = apply_scene_to_status(current_status, actions, servo_ids)
+    print(f"--- Kích hoạt kịch bản '{name}'. Lệnh mới: {device_status_map[houseid]} ---")
+    return {"status": "Success", "new_commands": device_status_map[houseid]}
 
 @router.post("/deactivate-scene")
 async def deactivate_scene_endpoint(payload: dict = Body(...)):
-    global device_status
+    global device_status_map
     try:
         name = payload.get("name")
+        houseid = payload.get("houseid", "HS001")
         if not name:
             return {"status": "Error", "message": "Missing name"}, 400
             
@@ -169,18 +195,20 @@ async def deactivate_scene_endpoint(payload: dict = Body(...)):
             elif isinstance(state, int) and not isinstance(state, bool) and state > 0:
                 reversed_actions.append({"device_id": dev_id, "value": 0})
 
-        device_status = apply_scene_to_status(device_status, reversed_actions)
-        print(f"--- Tắt kịch bản '{name}'. Lệnh mới: {device_status} ---")
-        return {"status": "Success", "new_commands": device_status}
+            current_status = device_status_map.get(houseid, [])
+            servo_ids = await get_servo_ids_for_house(_house_col, houseid)
+            device_status_map[houseid] = apply_scene_to_status(current_status, reversed_actions, servo_ids)
+            print(f"--- Tắt kịch bản '{name}'. Lệnh mới: {device_status_map[houseid]} ---")
+            return {"status": "Success", "new_commands": device_status_map[houseid]}
 
     except Exception as e:
         print(f"[LỖI DEACTIVATE-SCENE CRASH]: {e}")
         return {"status": "Error", "message": f"Server Error: {str(e)}"}, 500
 
 @router.get("/scenes")
-async def get_all_scenes():
+async def get_all_scenes(houseid: str = Query("HS001")):
     try:
-        cursor = _scene_manager.scenes_collection.find({})
+        cursor = _scene_manager.scenes_collection.find({"houseid": houseid})
         results = await cursor.to_list(length=100)
         formatted_results = []
         for item in results:
@@ -230,7 +258,7 @@ async def get_devices_info(houseid: str = Query("HS001")):
     result = []
     if devices_from_db:
         # Dynamic từ DB
-        status_dict = {item[0]: item[1] for item in device_status}
+        status_dict = {item[0]: item[1] for item in device_status_map.get(houseid, [])}
         for dev in devices_from_db:
             num = dev.get("numberdevice")
             dev_type = dev.get("type", "unknown")
@@ -248,13 +276,14 @@ async def get_devices_info(houseid: str = Query("HS001")):
             result.append({
                 "numberdevice": num,
                 "type": dev_type,
-                "name": DEVICE_TYPE_MAP.get(num, {}).get("name", f"Thiết bị {num}"),
+                "name": dev.get("name", get_default_device_name(num, dev_type)),
                 "status": current_status,
                 "status_text": status_text,
             })
     else:
-        # Fallback: dùng DEVICE_TYPE_MAP + device_status hiện tại
-        for item in device_status:
+        # Fallback: dùng mảng trống nếu không có cấu hình House
+        fallback_status = device_status_map.get(houseid, [])
+        for item in fallback_status:
             result.append(format_device_status(item[0], item[1]))
 
     return {"houseid": houseid, "devices": result}
