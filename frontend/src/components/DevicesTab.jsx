@@ -128,8 +128,8 @@ const IconShield = ({ active }) => {
 };
 
 const DEVICE_NAMES = {
-  2: 'Đèn 2', 3: 'Đèn 3', 4: 'Đèn 4',
-  6: 'Servo (Cửa)', 7: 'Quạt',
+  1: 'Đèn 1', 2: 'Đèn 2', 3: 'Đèn 3', 4: 'Đèn 4',
+  6: 'Cửa (Servo)', 7: 'Quạt',
 };
 
 export default function DevicesTab({
@@ -178,8 +178,8 @@ export default function DevicesTab({
                   <div className="anti-theft-info">
                     <IconShield active={antiTheftState?.state} />
                     <div>
-                      <h3 className="anti-theft-title">Chế độ Chống trộm</h3>
-                      <p className="anti-theft-subtitle">Đèn chống trộm kết hợp cảm biến PIR</p>
+                      <h3 className="anti-theft-title">{antiTheftState?.name || 'Chế độ an ninh'}</h3>
+                      <p className="anti-theft-subtitle">Chế độ tự động thông báo & cảnh báo</p>
                     </div>
                   </div>
                   <label className="toggle-switch">
