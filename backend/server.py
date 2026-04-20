@@ -5,26 +5,18 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
+
+# Import các Module
 from module.module2 import (
-    ThresholdManager,
-    NotificationChannelManager,
-    AutomationRuleManager,
-    DangerChecker,
-    AlertDispatcher,
-    init_module2,
-    process_danger_and_rules,
-    router as module2_router,
+    ThresholdManager, NotificationChannelManager, AutomationRuleManager,
+    DangerChecker, AlertDispatcher, init_module2,
+    process_danger_and_rules, router as module2_router, sync_device_state
 )
-from module.module3 import (
-    SceneManager,
-    init_module3,
-    router as module3_router,
-    #device_status as shared_device_status,
-)
+from module.module3 import SceneManager, init_module3, router as module3_router
 import module.module3 as module3
 from module.module1 import DashboardAnalytics, init_module1, router as module1_router
 from module.module4 import init_module4, router as module4_router
-from module.module2 import sync_device_state
+
 app = FastAPI()
 
 # 1. Cấu hình CORS
@@ -36,304 +28,99 @@ app.add_middleware(
 )
 
 # 2. Kết nối MongoDB
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://db:27017")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 client = AsyncIOMotorClient(MONGO_URL)
 db = client.iot_database
-collection = db.Sensor_history
-danger_collection = db.Danger_log  # Bảng log nguy hiểm
-device_log_collection = db.Device_log  # Bảng log thiết bị
-system_update_collection = db.System_update_log  # Bảng log cập nhật hệ thống
-scenes_collection = db.Mode  # Bảng kịch bản
-scene_manager = SceneManager(scenes_collection)
-house_col = db.House  # Đọc thông tin nhà (numberdevices, thresholds, ...)
-init_module3(scene_manager, house_col)
-automation_rules_col = db.Scenario  # Ánh xạ sang bảng Scenario theo ERD
-logupdate_collection = db.Logupdate
-threshold_mgr = ThresholdManager(house_col, logupdate_collection)
-channel_mgr = NotificationChannelManager(house_col)
-rule_mgr = AutomationRuleManager(automation_rules_col, threshold_mgr)
-alert_dispatcher = AlertDispatcher(danger_collection, channel_mgr)
 
-init_module4(
-    collection,
-    danger_collection,
-    device_log_collection,
-    logupdate_collection,  # ← db.Logupdate
-    threshold_mgr=threshold_mgr,
-)
+# 3. Khởi tạo các Module (Thứ tự quan trọng)
+threshold_mgr = ThresholdManager(db.House, db.Logupdate)
+channel_mgr = NotificationChannelManager(db.House)
+rule_mgr = AutomationRuleManager(db.Scenario, threshold_mgr)
+alert_dispatcher = AlertDispatcher(db.Danger_log, channel_mgr)
 
-# Biến toàn cục từ module được chia sẻ
-# Biến phụ để so sánh sự thay đổi log
-last_device_status = {} # Map by houseid -> {deviceNum: status}
-# Lưu trạng thái nguy hiểm để báo về Yolobit
-is_danger_global = False
+scene_manager = SceneManager(db.Mode)
+init_module3(scene_manager, db.House)
 
-init_module2(
-    app, threshold_mgr, channel_mgr, rule_mgr, alert_dispatcher, danger_collection
-)
-app.state.device_status = module3.device_status_map
-app.state.is_danger_global = False
-app.state.latest_sensor_data = {}
-app.state.last_pir_state = False
+dashboard_analytics = DashboardAnalytics(db.Sensor_history, db.Danger_log)
+init_module1(dashboard_analytics)
+
+init_module2(app, threshold_mgr, channel_mgr, rule_mgr, alert_dispatcher, db.Danger_log)
+init_module4(db.Sensor_history, db.Danger_log, db.Device_log, db.Logupdate, threshold_mgr=threshold_mgr)
+
+# 4. Include Routers (Sử dụng prefix /api TẬP TRUNG tại đây)
+app.include_router(module3_router, prefix="/api")
+app.include_router(module1_router) # module1_router đã có sẵn prefix /api bên trong file module1.py
 app.include_router(module2_router)
+app.include_router(module4_router)
+
+# Biến toàn cục & State
+last_device_status = {} 
+app.state.rule_mgr = rule_mgr
 
 # --- ENDPOINT NHẬN DỮ LIỆU TỪ YOLOBIT ---
-
 
 @app.post("/update")
 async def handle_data(payload: dict = Body(...)):
     global last_device_status
-    tz_vn = timezone(timedelta(hours=7))
-    now_vn_tz = datetime.now(tz_vn)
-    
-    # 1. FIX: Sử dụng giờ UTC thực tế cho MongoDB (tránh bị đội thêm +7h khi UI hiển thị),
-    # đồng thời giữ một bản gốc VN string để query date.
     now_utc = datetime.now(timezone.utc)
-    common_time = now_utc
-    
-    # { houseid: "HS001", temp: 30, humi: 60, light: 50, numberdevices: [{numberdevice: 1, status: True}, ...] }
+    now_vn = now_utc + timedelta(hours=7)
     house_id = payload.get("houseid", "HS001")
+    
     await sync_device_state(db.House, house_id, payload.get("numberdevices", []))
+    payload["time"] = now_utc
+    payload["date"] = now_vn.strftime("%Y-%m-%d")
     
-    payload["time"] = common_time  # Dùng làm index Date
-    payload["date"] = now_vn_tz.strftime("%Y-%m-%d")  # Phục vụ Lọc API theo múi giờ NV
-    
-    # Chuẩn bị truy xuất thông tin House để lấy Type
     house_config = await db.House.find_one({"_id.houseid": house_id})
-    house_devices = house_config.get("numberdevices", []) if house_config else []
-    dev_map = {d.get("numberdevice"): d for d in house_devices}
+    dev_map = {d.get("numberdevice"): d for d in house_config.get("numberdevices", [])} if house_config else {}
 
-    # 1. Ghi vào bảng sensor_history
     sensor_entry = payload.copy()
-    # ERD: PK là (time, houseid) -> tạo _id gộp 2 khóa này
-    sensor_entry["_id"] = f"{common_time.strftime('%Y-%m-%dT%H:%M:%S.%f')}_{house_id}" 
+    sensor_entry["_id"] = f"{now_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')}_{house_id}" 
     
-    # ERD: numberdevices CẦN phải có trường list {numberdevice, type, status}
     if "numberdevices" in sensor_entry:
-        for idx in range(len(sensor_entry["numberdevices"])):
-            num = sensor_entry["numberdevices"][idx].get("numberdevice")
-            if "type" not in sensor_entry["numberdevices"][idx]:
-                sensor_entry["numberdevices"][idx]["type"] = dev_map.get(num, {}).get("type", "unknown")
+        for d in sensor_entry["numberdevices"]:
+            num = d.get("numberdevice")
+            if "type" not in d: d["type"] = dev_map.get(num, {}).get("type", "unknown")
 
     try:
-        await collection.insert_one(sensor_entry)
+        await db.Sensor_history.insert_one(sensor_entry)
+        from module.module1 import update_latest_sensor_data, update_sensor_connection
+        update_latest_sensor_data(payload)
+        update_sensor_connection(now_utc)
 
-        import module.module1 as module1_mod
+        is_danger, new_status = await process_danger_and_rules(app, payload, house_id)
+        module3.device_status_map[house_id] = new_status
 
-        module1_mod.update_latest_sensor_data(payload)
-        app.state.latest_sensor_data = payload
-        # UC001.3: Cập nhật connection status (Ủy quyền cho module1)
-        import module.module1 as module1_mod
-
-        if module1_mod.update_sensor_connection(now_utc):
-            print("--- Cảm biến đã KẾT NỐI lại ---")
-
-        print(
-            f"--- Đã nhận dữ liệu từ Yolobit (House {house_id}) lúc: {now_vn_tz.strftime('%H:%M:%S')} ---"
-        )
-
-        # 2. MODULE ĐIỀU KIỆN VƯỢT NGƯỠNG (Lấy tạm ngưỡng cứng, sau này lấy từ House DB)
-        temp = payload.get("temp", 0)
-        light = payload.get("light", 0)
-        humi = payload.get("humi", 0)
-
-        is_danger_val, new_status_val = await process_danger_and_rules(
-            app, payload, house_id
-        )
-        is_danger_global = is_danger_val
-        module3.device_status_map[house_id] = new_status_val
-
-        # 3.1 GHI LOG THIẾT BỊ DO NGƯỜI DÙNG BẤM CÔNG TẮC HOẶC TỰ ĐỘNG
-        devices_status_array = payload.get("numberdevices", [])
-
-        # Lấy tên kịch bản tự động đang chạy (nếu có)
-        active_rule = app.state.rule_mgr.get_active_rule_name(house_id)
-        
-        if house_id not in last_device_status:
-             last_device_status[house_id] = {}
-
-        for dev in devices_status_array:
-            dev_num = dev.get("numberdevice")
-            stat = dev.get("status")
-
-            if last_device_status[house_id].get(dev_num) != stat:
-                dev_type = dev_map.get(dev_num, {}).get("type", "")
-                # Phân biệt lý do linh hoạt hơn
-                if dev_type == "denchongtrom":
-                    reason_str = "Người dùng cấu hình chống trộm"
-                else:
-                    if active_rule:
-                        reason_str = f"Tự động (Theo kịch bản: {active_rule})"
-                    else:
-                        reason_str = "Người dùng điều khiển thủ công"
-
-                timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                dev_id_in_db = f"{timestamp_str}{dev_num}_{house_id}"
-                old_status = last_device_status[house_id].get(dev_num)
-
-                device_log = {
-                    "_id": dev_id_in_db,
-                    "time": common_time,
-                    "houseid": house_id,
-                    "numberdevice": dev_num,
-                    "type": dev_type,           # Bổ sung theo chuẩn ERD
-                    "status": stat,             # Bổ sung theo chuẩn ERD
-                    "old_status": old_status,   # Giữ lại legacy logic không xoá
-                    "new_status": stat,         # Giữ lại legacy logic
-                    "reason": reason_str,
-                }
-                await device_log_collection.update_one(
-                    {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
-                )
-                last_device_status[house_id][dev_num] = stat
-                print(f"--- Đã ghi Log thiết bị ID {dev_num} ({reason_str}) nhà {house_id} ---")
-
-        # 3.2 GHI LOG KHI CẢM BIẾN PIR PHÁT HIỆN CÓ NGƯỜI (TÍN HIỆU NGẦM)
-        pir_active = payload.get("pir_active")
-        if pir_active is not None:
-            if app.state.last_pir_state != pir_active:
-                if pir_active == True:
-                    reason_str = "Hệ thống phát hiện có người (Đèn sáng)"
-                else:
-                    reason_str = "Hệ thống ngừng phát hiện người (Đèn tắt tạm thời)"
-
-                timestamp_str = common_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                dev_id_in_db = f"{timestamp_str}PIR"
-
-                device_log = {
-                    "_id": dev_id_in_db,
-                    "time": common_time,
-                    "houseid": house_id,
-                    "numberdevice": 1,  # Gắn mác ID 1 để hiện lên bảng log trên UI
-                    "type": "pir",      # Chuẩn hoá ERD
-                    "status": pir_active, # Chuẩn hoá ERD
-                    "old_status": app.state.last_pir_state,
-                    "new_status": pir_active,
-                    "reason": reason_str,
-                }
-                await device_log_collection.update_one(
-                    {"_id": dev_id_in_db}, {"$set": device_log}, upsert=True
-                )
-                app.state.last_pir_state = pir_active
-                print(f"--- Đã ghi Log PIR: {reason_str} ---")
-
-    except Exception as e:
-        print(f"Lỗi DB: {e}")
+        if house_id not in last_device_status: last_device_status[house_id] = {}
+        active_rule = rule_mgr.get_active_rule_name(house_id)
+        for dev in payload.get("numberdevices", []):
+            num, stat = dev.get("numberdevice"), dev.get("status")
+            if last_device_status[house_id].get(num) != stat:
+                from module.module3 import log_device_state
+                reason = f"Tự động (Kịch bản: {active_rule})" if active_rule else "Thiết bị phản hồi trạng thái"
+                await log_device_state(house_id, num, dev_map.get(num, {}).get("type", "unknown"), stat, reason=reason)
+                last_device_status[house_id][num] = stat
+    except Exception as e: print(f"[SERVER] Lỗi: {e}")
     return {"status": "Success"}
 
-
-# --- ENDPOINT MỚI (ĐỂ ĐIỀU KHIỂN) ---
-
-
-#! Yolobit sẽ gọi GET vào đây để lấy lệnh
 @app.get("/api/get-commands")
 async def get_commands(houseid: str = Query("HS001")):
-    # Trả về format mới: dict -> array of objects
-    house = await db.House.find_one({"_id.houseid": houseid})
     current_status = module3.device_status_map.get(houseid, [])
-    commands_array = [
-        {"numberdevice": item[0], "status": item[1]} for item in current_status
-    ]
     return {
-        "numberdevices": commands_array,
-        "is_danger": app.state.is_danger_global if isinstance(app.state.is_danger_global, bool) else False,  # Push cờ nguy hiểm xuống Yolobit
+        "numberdevices": [{"numberdevice": item[0], "status": item[1]} for item in current_status],
+        "is_danger": getattr(app.state, "is_danger_global", False)
     }
-
-
-#! Frontend hoặc File khác gọi POST vào đây để thay đổi trạng thái
-@app.post("/api/control")
-async def update_control(payload: dict = Body(...)):
-    # Nhận dữ liệu: {"commands": [[2, True], [6, 85]]}
-    house_id = payload.get("houseid", "HS001")
-    new_cmd = payload.get("commands")
-    if new_cmd:
-        module3.device_status_map[house_id] = new_cmd
-        # app.state.device_status = new_cmd # Deprecated using global dict natively
-        from module.module2 import sync_device_state
-        await sync_device_state(db.House, house_id, new_cmd)
-        print(f"--- Lệnh điều khiển mới nhà {house_id}: {new_cmd} ---")
-        return {"status": "Updated"}
-    return {"status": "Error"}, 400
-
-
-# --- INCLUDE ROUTER MODULE 3 ---
-app.include_router(module3_router)
-
-# --- PHÂN TÍCH & BIỂU ĐỒ (MODULE 1) ---
-dashboard_analytics = DashboardAnalytics(collection, danger_collection)
-init_module1(dashboard_analytics)
-app.include_router(module1_router)
-
-app.include_router(module4_router)
-
-
-
-# =====================================================================
-# --- THÊM MỚI: TÍCH HỢP ĐĂNG NHẬP (KHÔNG SỬA CODE CŨ) ---
-# =====================================================================
-# Khai báo collection chứa thông tin user (ví dụ collection tên là 'users' hoặc 'User')
-users_collection = db.User 
-
-@app.post("/api/login")
-async def login_api(payload: dict = Body(...)):
-    username_input = payload.get("username")
-    password = payload.get("password")
-    house_id = payload.get("houseid")
-    
-    if not username_input or not password:
-        return {"success": False, "message": "Vui lòng nhập đầy đủ Username/Email và Password!"}
-
-    try:
-        # 1. Kiểm tra User tồn tại theo _id (username) hoặc email
-        user = await users_collection.find_one({
-            "$or": [
-                {"email": username_input},
-                {"_id": username_input}
-            ]
-        })
-
-        if not user:
-            return {"success": False, "message": "Tài khoản không tồn tại!"}
-
-        # 2. Kiểm tra Password
-        if user.get("password") != password:
-            return {"success": False, "message": "Sai mật khẩu!"}
-        
-        # Lấy chính xác username từ _id của bảng User (vì người dùng có thể đang nhập bằng email)
-        actual_username = user.get("_id")
-
-        # 3. Kiểm tra xem House ID có thực sự thuộc về User này không
-        # Khóa chính của bảng house là tổ hợp của houseid và username
-        house = await house_col.find_one({
-            "_id.houseid": house_id,
-            "_id.username": actual_username
-        })
-
-        if not house:
-            return {"success": False, "message": f"House ID '{house_id}' không tồn tại hoặc không thuộc về tài khoản này!"}
-
-        # Xóa password để không bị lộ khi gửi về frontend
-        user.pop("password", None)
-
-        return {
-            "success": True,
-            "message": "Đăng nhập thành công",
-            "user": user,
-            "houseid": house_id
-        }
-    except Exception as e:
-        print(f"Lỗi đăng nhập: {e}")
-        return {"success": False, "message": "Lỗi máy chủ nội bộ"}
-# =====================================================================
 
 @app.on_event("startup")
 async def startup_event():
-    # Khởi chạy các background tasks khi server bắt đầu
     import module.module1 as module1_mod
-
     module1_mod.start_monitoring()
     from module.module2 import initialize_default_house 
-    await initialize_default_house(house_col)
+    await initialize_default_house(db.House)
+    
+    print("\n--- DANH SÁCH API ROUTES ĐÃ ĐĂNG KÝ ---")
+    for route in app.routes:
+        print(f"DEBUG_ROUTE: {route.path} (Methods: {route.methods})")
+    print("---------------------------------------\n")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)

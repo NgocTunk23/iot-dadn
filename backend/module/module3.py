@@ -2,10 +2,12 @@ from fastapi import APIRouter, Body, Query
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from pydantic.v1.json import ENCODERS_BY_TYPE
+
+# Patch cho ObjectId
 ENCODERS_BY_TYPE[ObjectId] = str
 
-# Cố định tiền tố /api cho tất cả các đường dẫn trong Module 3 (DỨT ĐIỂM)
-router = APIRouter(prefix="/api")
+# Router KHÔNG có prefix ở đây (sẽ được định nghĩa ở server.py)
+router = APIRouter()
 
 def get_default_device_name(dev_num, dev_type):
     if dev_type == "denchongtrom": return "Đèn báo trộm" 
@@ -13,14 +15,6 @@ def get_default_device_name(dev_num, dev_type):
     if dev_type == "servo": return "Cửa (Servo)"
     if dev_type == "quat": return "Quạt"
     return f"Thiết bị {dev_num}"
-
-def format_device_status(numberdevice, status, dev_type="unknown"):
-    name = get_default_device_name(numberdevice, dev_type)
-    if dev_type in ("den", "denchongtrom"): status_text = "Bật" if status else "Tắt"
-    elif dev_type == "servo": status_text = "Mở" if (isinstance(status, int) and status >= 45) else "Đóng"
-    elif dev_type == "quat": status_text = "Chạy" if (isinstance(status, int) and status > 0) else "Tắt"
-    else: status_text = str(status)
-    return {"type": dev_type, "name": name, "numberdevice": numberdevice, "status": status, "status_text": status_text}
 
 device_status_map = {}
 _scene_manager = None
@@ -42,7 +36,7 @@ async def log_device_state(houseid, numberdevice, dev_type, status, reason="Đi�
         await device_log_col.update_one({"_id": log_id}, {"$set": log_entry}, upsert=True)
     except Exception as e: print(f"[MODULE3] Lỗi ghi log: {e}")
 
-# --- API ENDPOINTS ---
+# --- API ENDPOINTS (Đường dẫn tương đối) ---
 
 @router.post("/login")
 async def login_api_override(payload: dict = Body(...)):
@@ -54,9 +48,16 @@ async def login_api_override(payload: dict = Body(...)):
         user = await users_collection.find_one({"$or": [{"email": username_input}, {"_id": username_input}]})
         if not user or user.get("password") != password: return {"success": False, "message": "Sai tài khoản/mật khẩu"}
         actual_username = user.get("_id")
-        house = await _house_col.find_one({"_id.houseid": house_id, "_id.username": actual_username})
+        # Sử dụng regex để kiểm tra house_id không phân biệt hoa thường
+        house = await _house_col.find_one({
+            "_id.houseid": {"$regex": f"^{house_id}$", "$options": "i"}, 
+            "_id.username": actual_username
+        })
         if not house: return {"success": False, "message": "House ID không thuộc tài khoản này"}
-        return {"success": True, "message": "Thành công", "user": {k:v for k,v in user.items() if k!="password"}, "houseid": house_id}
+        
+        # Đảm bảo trả về đúng houseid từ DB (để đồng nhất hoa thường)
+        db_house_id = house["_id"]["houseid"]
+        return {"success": True, "message": "Thành công", "user": {k:v for k,v in user.items() if k!="password"}, "houseid": db_house_id}
     except Exception as e: return {"success": False, "message": f"Lỗi: {str(e)}"}
 
 @router.post("/control")

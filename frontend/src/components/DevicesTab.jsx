@@ -178,7 +178,7 @@ export default function DevicesTab({
                   <div className="anti-theft-info">
                     <IconShield active={antiTheftState?.state} />
                     <div>
-                      <h3 className="anti-theft-title">{antiTheftState?.name || 'Chế độ an ninh'}</h3>
+                      <h3 className="anti-theft-title">{antiTheftState?.name || 'Chế độ chống trộm'}</h3>
                       <p className="anti-theft-subtitle">Chế độ tự động thông báo & cảnh báo</p>
                     </div>
                   </div>
