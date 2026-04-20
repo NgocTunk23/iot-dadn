@@ -60,7 +60,7 @@ export default function DeviceControls({ stateObj, updater, deviceList }) {
         const devKey = dev.key;
         const devState = stateObj[devKey];
 
-        if (!devState) return null; // Still loading this device's state
+        if (devState === undefined || devState === null) return null; // Still loading this device's state
 
         // --- Render Switch (Đèn) ---
         if (dev.type === 'switch') {

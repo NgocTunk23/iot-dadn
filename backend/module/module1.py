@@ -23,10 +23,12 @@ def update_latest_sensor_data(payload):
     """Cập nhật dữ liệu cảm biến mới nhất (gọi từ server.py)"""
     global latest_sensor_data
     
-    # Chuẩn hóa dữ liệu Servo (ID 6) trong payload trước khi lưu
+    # Chuẩn hóa dữ liệu Servo trong payload trước khi lưu
     if "numberdevices" in payload:
         for dev in payload["numberdevices"]:
-            if dev.get("numberdevice") == 6:
+            dev_type = dev.get("type", "")
+            # Chuẩn hóa trạng thái Servo về 0 hoặc 90 (UC003)
+            if dev_type == "servo" or dev.get("numberdevice") == 6:
                 try:
                     dev["status"] = 90 if int(dev.get("status", 0)) >= 45 else 0
                 except (ValueError, TypeError):
