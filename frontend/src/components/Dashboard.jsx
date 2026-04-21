@@ -242,7 +242,7 @@ function TrendChart({ title, subtitle, data, gradientColors, unit, suggestedMin,
 }
 
 /* ======================== MAIN DASHBOARD ======================== */
-export default function Dashboard({ data }) {
+export default function Dashboard({ data, houseId }) {
   const [alerts, setAlerts] = useState([]);
   const [comparison, setComparison] = useState(null);
   const [trendData, setTrendData] = useState(null);
@@ -425,7 +425,7 @@ export default function Dashboard({ data }) {
       </div>
       {/* LOGGING TABLE */}
       <div style={{ marginTop: '30px' }}>
-        <LoggingTables houseid={data?.houseid || "HS001"} />
+        <LoggingTables houseid={houseId} />
       </div>
     </>
   );

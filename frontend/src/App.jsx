@@ -1,14 +1,14 @@
 import './index.css';
 
 // Import component Login vừa tạo (Đảm bảo đường dẫn chính xác)
-import Login from './Login'; 
+import Login from './Login';
 
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import DevicesTab from './components/DevicesTab';
 import SettingsTab from './components/SettingsTab';
 import { ToastContainer, useToast } from './components/Toast';
-import AlertTab from './components/AlertTab'; 
+import AlertTab from './components/AlertTab';
 
 import useSensorData from './hooks/useSensorData';
 import useDevices from './hooks/useDevices';
@@ -16,7 +16,7 @@ import useDevices from './hooks/useDevices';
 const PAGE_TITLES = {
   dashboard: 'Tổng quan Hệ thống',
   devices: 'Quản lý Thiết bị',
-  alerts: 'Cảnh báo & Ngưỡng', 
+  alerts: 'Cảnh báo & Ngưỡng',
   settings: 'Cài đặt Hệ thống',
 };
 import React, { useState, useEffect } from 'react'; // Nhớ import useEffect
@@ -57,34 +57,34 @@ function App() {
   // 2. Hàm xử lý khi người dùng nhấn nút Đăng nhập
   // Trong file App.jsx
 
-const handleLoginSubmit = async (credentials) => {
-  try {
-    const response = await fetch('http://localhost:5000/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: credentials.email, // Đây là username/email từ form
-        password: credentials.password,
-        houseid: credentials.houseId // GỬI HOUSEID LÊN ĐÂY
-      })
-    });
+  const handleLoginSubmit = async (credentials) => {
+    try {
+      const response = await fetch('http://localhost:5000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: credentials.email, // Đây là username/email từ form
+          password: credentials.password,
+          houseid: credentials.houseId // GỬI HOUSEID LÊN ĐÂY
+        })
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (data.success) {
-      setUserData(data.user);
-      setHouseId(data.houseid);
-      setIsAuthenticated(true);
-      // Lưu đúng houseid mà backend đã xác nhận
-      localStorage.setItem('houseid', data.houseid);
-      localStorage.setItem('username', JSON.stringify( data.user._id ));
-    } else {
-      alert(data.message);
+      if (data.success) {
+        setUserData(data.user);
+        setHouseId(data.houseid);
+        setIsAuthenticated(true);
+        // Lưu đúng houseid mà backend đã xác nhận
+        localStorage.setItem('houseid', data.houseid);
+        localStorage.setItem('username', JSON.stringify(data.user._id));
+      } else {
+        alert(data.message);
+      }
+    } catch (error) {
+      alert("Lỗi kết nối server");
     }
-  } catch (error) {
-    alert("Lỗi kết nối server");
-  }
-};
+  };
 
   // 3. Nếu CHƯA đăng nhập -> Chỉ render màn hình Login
   if (!isAuthenticated) {
@@ -112,11 +112,11 @@ const handleLoginSubmit = async (credentials) => {
           </div>
         )}
 
-        {activeTab === 'dashboard' && <Dashboard data={data} />}
+        {activeTab === 'dashboard' && <Dashboard data={data} houseId={houseId} />}
         {activeTab === 'devices' && <DevicesTab {...devices} />}
-        {activeTab === 'alerts' && <AlertTab houseId={houseId} addToast={addToast}/>}
+        {activeTab === 'alerts' && <AlertTab houseId={houseId} addToast={addToast} />}
         {activeTab === 'settings' && <SettingsTab onLogout={handleLogout} />}
-        
+
       </div>
 
       {/* Toast Notifications */}
