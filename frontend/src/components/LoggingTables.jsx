@@ -32,7 +32,7 @@ const TAB_CONFIG = {
     },
 };
 
-export default function LoggingTables() {
+export default function LoggingTables({ houseid = "HS001" }) {
     const [activeTab, setActiveTab] = useState("danger");
     const [currentPage, setCurrentPage] = useState(1);
     const [loading, setLoading] = useState(false);
@@ -110,6 +110,21 @@ export default function LoggingTables() {
         };
         const s = map[status] || map["Bình thường"];
         return badge(s.bg, s.color, s.border, status || "Bình thường");
+    };
+
+    const TAB_CONFIG = {
+        danger: {
+            endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}`,
+        },
+        sensor: {
+            endpoint: `${API_BASE}/logging/sensor-history?houseid=${houseid}`,
+        },
+        device: {
+            endpoint: `${API_BASE}/logging/device-history?houseid=${houseid}`,
+        },
+        update: {
+            endpoint: `${API_BASE}/logging/system-updates?houseid=${houseid}`,
+        },
     };
 
     // Filter dropdown

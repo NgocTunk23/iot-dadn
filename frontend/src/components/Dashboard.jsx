@@ -425,7 +425,7 @@ export default function Dashboard({ data }) {
       </div>
       {/* LOGGING TABLE */}
       <div style={{ marginTop: '30px' }}>
-        <LoggingTables />
+        <LoggingTables houseid={data?.houseid || "HS001"} />
       </div>
     </>
   );
