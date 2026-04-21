@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta, timezone
 import os
 import uvicorn
+from contextlib import asynccontextmanager  # <--- Thêm dòng này
 
 # Import các Module
 from module.module2 import (
@@ -17,7 +18,26 @@ import module.module3 as module3
 from module.module1 import DashboardAnalytics, init_module1, router as module1_router
 from module.module4 import init_module4, router as module4_router
 
-app = FastAPI()
+# TẠO HÀM LIFESPAN MỚI (Chèn vào TRƯỚC chỗ app = FastAPI)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import module.module1 as module1_mod
+    module1_mod.start_monitoring()
+    from module.module2 import initialize_default_house 
+    await initialize_default_house(db.House)
+    
+    print("\n--- DANH SÁCH API ROUTES ĐÃ ĐĂNG KÝ ---")
+    for route in app.routes:
+        print(f"DEBUG_ROUTE: {route.path} (Methods: {route.methods})")
+    print("---------------------------------------\n")
+    
+    yield  # Bắt buộc phải có chữ yield này
+    
+    print("Server đang tắt...")
+
+
+# SỬA LẠI CÁCH KHỞI TẠO APP (Thay cho app = FastAPI() cũ)
+app = FastAPI(lifespan=lifespan)
 
 # 1. Cấu hình CORS
 app.add_middleware(
@@ -110,17 +130,34 @@ async def get_commands(houseid: str = Query("HS001")):
         "is_danger": getattr(app.state, "is_danger_global", False)
     }
 
-@app.on_event("startup")
-async def startup_event():
-    import module.module1 as module1_mod
-    module1_mod.start_monitoring()
-    from module.module2 import initialize_default_house 
-    await initialize_default_house(db.House)
+@app.get("/api/house-info")
+async def get_house_info(houseid: str, username: str):
+    print(f"\n[DEBUG] Đang tra cứu nhà với houseid={houseid}, username={username}") # <-- Thêm dòng này
+    try:
+        house_config = await db.House.find_one({
+            "_id.houseid": houseid,
+            "_id.username": username
+        })
+        print(f"[DEBUG] Kết quả tìm được: {house_config}") # <-- Thêm dòng này
+        
+        if house_config:
+            return house_config
+        return {"error": "Không tìm thấy thông tin nhà cho user này."}
+    except Exception as e:
+        print(f"[API LỖI] /api/house-info: {e}")
+        return {"error": "Lỗi truy vấn Database"}
     
-    print("\n--- DANH SÁCH API ROUTES ĐÃ ĐĂNG KÝ ---")
-    for route in app.routes:
-        print(f"DEBUG_ROUTE: {route.path} (Methods: {route.methods})")
-    print("---------------------------------------\n")
+# @app.on_event("startup")
+# async def startup_event():
+#     import module.module1 as module1_mod
+#     module1_mod.start_monitoring()
+#     from module.module2 import initialize_default_house 
+#     await initialize_default_house(db.House)
+    
+#     print("\n--- DANH SÁCH API ROUTES ĐÃ ĐĂNG KÝ ---")
+#     for route in app.routes:
+#         print(f"DEBUG_ROUTE: {route.path} (Methods: {route.methods})")
+#     print("---------------------------------------\n")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)
