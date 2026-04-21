@@ -171,7 +171,6 @@ async def get_sensor_history(
             pass
 
     cursor = sensor_collection.find({"houseid": houseid}).sort("time", -1).limit(limit)
-
     result = []
     async for doc in cursor:
         temp = doc.get("temp", 0)
@@ -197,7 +196,7 @@ async def get_sensor_history(
 # =============================
 @router.get("/device-history")
 async def get_device_history(
-    houseid: str = Query(...),
+    houseid: str = Query("HS001"),
     limit: int = Query(20),
 ):
     if device_collection is None:
@@ -215,7 +214,6 @@ async def get_device_history(
             continue
         # -------------------------------
 
-        
         old_status = doc.get("old_status", False)
         new_status = doc.get("new_status", False)
         reason = doc.get("reason", "")
@@ -241,12 +239,12 @@ async def get_device_history(
                 elif val == 100:
                     return "Mức 4"
                 # Dự phòng nếu sau này có gửi số lạ không nằm trong 4 mức trên
-                return f"Mức {val}" 
+                return f"Mức {val}"
 
             # 3. Nếu là Đèn/Công tắc thông thường (True/False)
-            if isinstance(val, bool):  
+            if isinstance(val, bool):
                 return "Bật" if val else "Tắt"
-            
+
             # Các trường hợp thiết bị khác (nếu có)
             return str(val)
 
@@ -256,7 +254,14 @@ async def get_device_history(
                 "device": DEVICE_MAP.get(device_num, f"Thiết bị {device_num}"),
                 "old_value": format_status(old_status, device_num),
                 "new_value": format_status(new_status, device_num),
-                "actor": "Hệ thống" if any(kw in reason.lower() for kw in ["hệ thống", "tự động", "ngừng phát hiện"]) else "Người dùng",
+                "actor": (
+                    "Hệ thống"
+                    if any(
+                        kw in reason.lower()
+                        for kw in ["hệ thống", "tự động", "ngừng phát hiện"]
+                    )
+                    else "Người dùng"
+                ),
             }
         )
 
