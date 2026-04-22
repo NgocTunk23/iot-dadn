@@ -116,7 +116,7 @@ export default function LoggingTables({ houseid = "HS001" }) {
         danger: { 
             label: "Cảnh báo vượt ngưỡng",
             subtitle: "Danh sách các cảnh báo khi vượt ngưỡng cho phép",
-            endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}` 
+            endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}&limit=0` 
         },
         sensor: { 
             label: "Dữ liệu cảm biến",

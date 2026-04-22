@@ -129,23 +129,46 @@ async def get_danger_history(
                 actual_val = v.get("value", "--")
                 unit = SENSOR_UNIT.get(sensor, "")
 
-                # FIX LỖI NGƯỠNG HIỆN TẠI: Ưu tiên lấy ngưỡng (threshold/limit) được lưu lúc sự cố xảy ra
-                historical_threshold = v.get("threshold") or v.get("limit") or doc.get("threshold")
-                
-                if historical_threshold is not None:
-                    # Hiển thị chính xác con số bị vi phạm lúc đó
-                    threshold_label = f"Mốc vi phạm: {historical_threshold}{unit}"
+                # KIỂM TRA DỮ LIỆU ĐỂ QUYẾT ĐỊNH MỨC ĐỘ VÀ CÁCH HIỂN THỊ
+                if actual_val == "--":
+                    display_actual = "--"
+                    display_level = "Cảnh báo"
                 else:
-                    # Nếu DB không lưu, buộc fallback về ngưỡng cài đặt của ngày hôm nay
-                    threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
+                    display_actual = f"{actual_val}{unit}"
+                    display_level = "Nguy hiểm"
+
+                # --- ĐOẠN MỚI CẦN THAY THẾ ---
+                # Lấy cả loại (max/min) và con số giới hạn
+                historical_type = v.get("threshold") 
+                historical_limit = v.get("limit")
+                
+                if historical_limit is not None:
+                    # Format hiển thị "Max: 22.5°C" hoặc "Min: 10%"
+                    if historical_type == "max":
+                        threshold_label = f"Max: {historical_limit}{unit}"
+                    elif historical_type == "min":
+                        threshold_label = f"Min: {historical_limit}{unit}"
+                    else:
+                        threshold_label = f"Ngưỡng: {historical_limit}{unit}"
+                else:
+                    # Fallback dự phòng cho các log quá cũ
+                    fallback_val = v.get("threshold")
+                    if not isinstance(fallback_val, (int, float)):
+                        fallback_val = doc.get("threshold")
+                        
+                    if isinstance(fallback_val, (int, float)):
+                        threshold_label = f"Ngưỡng: {fallback_val}{unit}"
+                    else:
+                        threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
+                # --- KẾT THÚC ĐOẠN SỬA ---
 
                 result.append(
                     {
                         "time": format_time(doc.get("time")),
                         "sensor": sensor,
                         "threshold": threshold_label,
-                        "actual": f"{actual_val}{unit}",
-                        "level": "Nguy hiểm",
+                        "actual": display_actual, # Sử dụng biến đã format
+                        "level": display_level,   # Sử dụng biến level đã xét điều kiện
                     }
                 )
         else:
@@ -156,13 +179,17 @@ async def get_danger_history(
             else:
                 threshold_label = SENSOR_THRESHOLD_LABEL.get(doc.get("sensor", "temp"), "--")
 
+            actual_val = doc.get("actual", "--")
+            # Kiểm tra tương tự cho dữ liệu cũ
+            display_level = "Cảnh báo" if actual_val == "--" else "Nguy hiểm"
+
             result.append(
                 {
                     "time": format_time(doc.get("time")),
                     "sensor": doc.get("sensor", "Không rõ"),
                     "threshold": threshold_label,
-                    "actual": doc.get("actual", "--"),
-                    "level": "Nguy hiểm",
+                    "actual": actual_val,
+                    "level": display_level, # Sử dụng biến level đã xét điều kiện
                 }
             )
 
@@ -219,7 +246,7 @@ async def get_sensor_history(
 @router.get("/device-history")
 async def get_device_history(
     houseid: str = Query("HS001"),
-    limit: int = Query(20),
+    limit: int = Query(0),
 ):
     if device_collection is None:
         return []

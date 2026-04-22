@@ -25,14 +25,22 @@ def init_module3(manager, house_col=None):
     _scene_manager = manager
     _house_col = house_col
 
-async def log_device_state(houseid, numberdevice, dev_type, status, reason="Điều khiển"):
+async def log_device_state(houseid, numberdevice, dev_type, new_status, old_status=False, reason="Điều khiển"):
     if _house_col is None: return
     try:
         device_log_col = _house_col.database.Device_log
         now_utc = datetime.now(timezone.utc)
         timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         log_id = f"{timestamp_str}{numberdevice}_{houseid}"
-        log_entry = {"_id": log_id, "time": now_utc, "houseid": houseid, "numberdevice": numberdevice, "type": dev_type, "status": status, "reason": reason}
+        
+        # Đổi "status" thành "old_status" và "new_status"
+        log_entry = {
+            "_id": log_id, "time": now_utc, "houseid": houseid, 
+            "numberdevice": numberdevice, "type": dev_type, 
+            "old_status": old_status, 
+            "new_status": new_status, 
+            "reason": reason
+        }
         await device_log_col.update_one({"_id": log_id}, {"$set": log_entry}, upsert=True)
     except Exception as e: print(f"[MODULE3] Lỗi ghi log: {e}")
 
@@ -69,11 +77,24 @@ async def update_control_override(payload: dict = Body(...)):
     try:
         house = await _house_col.find_one({"_id.houseid": house_id})
         dev_map = {d["numberdevice"]: d for d in house.get("numberdevices", [])} if house else {}
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # Lấy trạng thái hiện tại (cũ) chuyển thành dict để dễ tra cứu TRƯỚC KHI ghi đè
+        old_status_list = device_status_map.get(house_id, [])
+        old_status_dict = {item[0]: item[1] for item in old_status_list}
+        
         device_status_map[house_id] = new_cmds
         for cmd in new_cmds:
             d_id, d_val = cmd[0], cmd[1]
             d_type = dev_map.get(d_id, {}).get("type", "unknown")
-            await log_device_state(house_id, d_id, d_type, d_val, reason="Người dùng điều khiển thủ công")
+            
+            # Lấy ra trạng thái cũ tương ứng của thiết bị này
+            old_val = old_status_dict.get(d_id, False) 
+            
+            # Truyền old_status vào hàm
+            await log_device_state(house_id, d_id, d_type, new_status=d_val, old_status=old_val, reason="Người dùng điều khiển thủ công")
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            
         from module.module2 import sync_device_state
         await sync_device_state(_house_col, house_id, new_cmds)
         return {"status": "Updated"}
@@ -121,7 +142,13 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
     name, houseid = payload.get("name"), payload.get("houseid", "HS001")
     actions = await _scene_manager.get_scene_actions(name)
     if actions is None: return {"status": "Error"}, 404
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     current = device_status_map.get(houseid, [])
+    
+    # Lưu lại trạng thái cũ thành dict để tra cứu dễ dàng
+    old_status_dict = {item[0]: item[1] for item in current}
+    
     s_ids = await get_servo_ids_for_house(_house_col, houseid)
     new_status = apply_scene_to_status(current, actions, s_ids)
     device_status_map[houseid] = new_status
@@ -129,7 +156,15 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
     dev_map = {d["numberdevice"]: d["type"] for d in house.get("numberdevices", [])} if house else {}
     for act in actions:
         d_id = act.get("numberdevice")
-        await log_device_state(houseid, d_id, dev_map.get(d_id, "unknown"), act.get("status"), reason=f"Chế độ: {name}")
+        d_val = act.get("status")
+        
+        # Lấy trạng thái cũ của thiết bị này
+        old_val = old_status_dict.get(d_id, False)
+        
+        # Truyền old_status vào
+        await log_device_state(houseid, d_id, dev_map.get(d_id, "unknown"), new_status=d_val, old_status=old_val, reason=f"Chế độ: {name}")
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     return {"status": "Success", "new_commands": new_status}
 
 @router.get("/scenes")

@@ -106,14 +106,42 @@ async def handle_data(payload: dict = Body(...)):
             if "type" not in d: d["type"] = dev_map.get(num, {}).get("type", "unknown")
 
     try:
+        # 1. Chạy hàm kiểm tra luật và cảnh báo TRƯỚC để đánh giá dữ liệu
+        is_danger, new_status = await process_danger_and_rules(app, payload, house_id)
+        
+        # 2. XỬ LÝ TRẠNG THÁI: NGUY HIỂM / CẢNH BÁO / BÌNH THƯỜNG
+        if is_danger:
+            sensor_entry["status"] = "Nguy hiểm"
+        else:
+            # Lấy ngưỡng hiện tại của nhà để kiểm tra cận biên
+            thresholds = await threshold_mgr.get_thresholds(house_id)
+            
+            # Cảnh báo nếu: 0.8*max < val <= max HOẶC min <= val < 1.2*min
+            def is_warning(val, min_val, max_val):
+                near_max = (val > 0.8 * max_val) and (val < max_val)
+                near_min = (val < 1.2 * min_val) and (val > min_val)
+                return near_max or near_min
+            
+            temp = payload.get("temp", 0)
+            humi = payload.get("humi", 0)
+            light = payload.get("light", 0)
+            
+            if (is_warning(temp, thresholds["temp"]["min"], thresholds["temp"]["max"]) or
+                is_warning(humi, thresholds["humi"]["min"], thresholds["humi"]["max"]) or
+                is_warning(light, thresholds["light"]["min"], thresholds["light"]["max"])):
+                sensor_entry["status"] = "Cảnh báo"
+            else:
+                sensor_entry["status"] = "Bình thường"
+        
+        # 3. Bây giờ mới lưu vào Database (đã có kèm trường status)
         await db.Sensor_history.insert_one(sensor_entry)
+
         from module.module1 import update_latest_sensor_data, update_sensor_connection
         update_latest_sensor_data(payload)
         update_sensor_connection(now_utc)
-
-        is_danger, new_status = await process_danger_and_rules(app, payload, house_id)
         
         if house_id not in last_device_status: last_device_status[house_id] = {}
+        
         active_rule = rule_mgr.get_active_rule_name(house_id)
         
         # SỬA LỖI TỰ ĐỘNG TẮT: 
@@ -122,14 +150,23 @@ async def handle_data(payload: dict = Body(...)):
         if is_danger or active_rule:
             module3.device_status_map[house_id] = new_status
 
-
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         for dev in payload.get("numberdevices", []):
             num, stat = dev.get("numberdevice"), dev.get("status")
-            if last_device_status[house_id].get(num) != stat:
+            
+            # Lấy trạng thái cũ ra biến riêng
+            old_stat = last_device_status[house_id].get(num)
+            
+            if old_stat != stat:
                 from module.module3 import log_device_state
                 reason = f"Tự động (Kịch bản: {active_rule})" if active_rule else "Thiết bị phản hồi trạng thái"
-                await log_device_state(house_id, num, dev_map.get(num, {}).get("type", "unknown"), stat, reason=reason)
+                
+                # Gọi hàm và truyền thêm old_status (nếu old_stat chưa có thì mặc định False)
+                await log_device_state(house_id, num, dev_map.get(num, {}).get("type", "unknown"), new_status=stat, old_status=old_stat if old_stat is not None else False, reason=reason)
+                
                 last_device_status[house_id][num] = stat
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     except Exception as e: print(f"[SERVER] Lỗi: {e}")
     return {"status": "Success"}
 
