@@ -45,14 +45,23 @@ def format_time(t):
 # SENSOR STATUS — dùng ngưỡng động từ module2
 # =============================
 def get_sensor_status(temp, humi, light, thresholds: dict) -> str:
-    t_max = thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40)
-    h_max = thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80)
-    l_max = thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90)
+    # Lấy ngưỡng MIN/MAX, ưu tiên định dạng phẳng (tempmax, humimax...) từ house-info
+    # Nếu không có thì fallback về dạng lồng nhau hoặc giá trị mặc định.
+    t_min = thresholds.get("tempmin", thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("min", 0))
+    t_max = thresholds.get("tempmax", thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40))
+    
+    h_min = thresholds.get("humimin", thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("min", 20))
+    h_max = thresholds.get("humimax", thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80))
+    
+    l_min = thresholds.get("lightmin", thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("min", 0))
+    l_max = thresholds.get("lightmax", thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90))
 
-    if temp > t_max * 1.1 or humi > h_max * 1.1 or light > l_max * 1.1:
+    # Nếu VƯỢT QUÁ ngưỡng (nhỏ hơn min hoặc lớn hơn max) -> Nguy hiểm
+    if (temp < t_min or temp > t_max) or \
+       (humi < h_min or humi > h_max) or \
+       (light < l_min or light > l_max):
         return "Nguy hiểm"
-    if temp > t_max or humi > h_max or light > l_max:
-        return "Cảnh báo"
+        
     return "Bình thường"
 
 
@@ -115,16 +124,8 @@ async def get_danger_history(
                 unit = SENSOR_UNIT.get(sensor, "")
                 threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
 
-                # Tính level dựa vào actual value so với threshold
-                try:
-                    th_max = thresholds.get(
-                        sensor, DEFAULT_THRESHOLDS.get(sensor, {})
-                    ).get("max", 100)
-                    level = (
-                        "Nguy hiểm" if float(actual_val) > th_max * 1.1 else "Cảnh báo"
-                    )
-                except Exception:
-                    level = "Cảnh báo"
+
+                level = "Nguy hiểm"
 
                 result.append(
                     {

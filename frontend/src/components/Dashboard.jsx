@@ -381,7 +381,7 @@ export default function Dashboard({ data, houseId }) {
           )}
 
 
-          <div className="alerts-section">
+          {/* <div className="alerts-section">
             <div className="alerts-header">
               <h3>Cảnh báo & Nhận định</h3>
               <p>Phân tích tự động dựa trên dữ liệu xu hướng</p>
@@ -391,7 +391,7 @@ export default function Dashboard({ data, houseId }) {
                 <AlertItem key={idx} type={alert.type} title={alert.title} message={alert.message} />
               ))}
             </div>
-          </div>
+          </div> */}
         </>
       ) : (
         <div style={{
