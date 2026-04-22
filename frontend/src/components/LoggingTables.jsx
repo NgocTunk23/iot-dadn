@@ -116,22 +116,22 @@ export default function LoggingTables({ houseid = "HS001" }) {
         danger: { 
             label: "Cảnh báo vượt ngưỡng",
             subtitle: "Danh sách các cảnh báo khi vượt ngưỡng cho phép",
-            endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}&limit=0` 
+            endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}&limit=50` 
         },
         sensor: { 
             label: "Dữ liệu cảm biến",
             subtitle: "Lịch sử ghi nhận dữ liệu từ các cảm biến (mỗi 5 phút)",
-            endpoint: `${API_BASE}/logging/sensor-history?houseid=${houseid}` 
+            endpoint: `${API_BASE}/logging/sensor-history?houseid=${houseid}&limit=50` 
         },
         device: { 
             label: "Trạng thái thiết bị",
             subtitle: "Theo dõi các thay đổi của thiết bị trong hệ thống",
-            endpoint: `${API_BASE}/logging/device-history?houseid=${houseid}` 
+            endpoint: `${API_BASE}/logging/device-history?houseid=${houseid}&limit=50` 
         },
         update: { 
             label: "Cập nhật hệ thống",
             subtitle: "Theo dõi các cập nhật và thay đổi hệ thống",
-            endpoint: `${API_BASE}/logging/system-updates?houseid=${houseid}` 
+            endpoint: `${API_BASE}/logging/system-updates?houseid=${houseid}&limit=50` 
         },
     };
 
