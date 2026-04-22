@@ -84,17 +84,21 @@ async def handle_data(payload: dict = Body(...)):
     global last_device_status
     now_utc = datetime.now(timezone.utc)
     now_vn = now_utc + timedelta(hours=7)
+    # Loại bỏ tzinfo để MongoDB lưu đúng giá trị giờ mặt đồng hồ VN (Múi giờ 7)
+    now_vn_naive = now_vn.replace(tzinfo=None) 
+    
     house_id = payload.get("houseid", "HS001")
     
     await sync_device_state(db.House, house_id, payload.get("numberdevices", []))
-    payload["time"] = now_utc
+    payload["time"] = now_vn_naive # <-- Sửa: Lưu thời gian đã +7 tiếng
     payload["date"] = now_vn.strftime("%Y-%m-%d")
     
     house_config = await db.House.find_one({"_id.houseid": house_id})
     dev_map = {d.get("numberdevice"): d for d in house_config.get("numberdevices", [])} if house_config else {}
 
     sensor_entry = payload.copy()
-    sensor_entry["_id"] = f"{now_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')}_{house_id}" 
+    # <-- Sửa: Lấy giờ VN để tạo _id
+    sensor_entry["_id"] = f"{now_vn_naive.strftime('%Y-%m-%dT%H:%M:%S.%f')}_{house_id}"
     
     if "numberdevices" in sensor_entry:
         for d in sensor_entry["numberdevices"]:

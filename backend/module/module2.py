@@ -560,7 +560,8 @@ class AlertDispatcher:
 
     async def dispatch(self, houseid: str, violations: list,
                        sensor_data: dict, device_status: list,
-                       triggered_rules: list | None = None):
+                       triggered_rules: list | None = None,
+                       thresholds: dict = None):
         import time
         now_ts = time.time()
         last   = self._last_alert.get(houseid, 0)
@@ -578,6 +579,7 @@ class AlertDispatcher:
                 "time":       now_dt,
                 "violations": violations,
                 "value":      {k: sensor_data.get(k) for k in ("temp", "humi", "light")},
+                "thresholds": thresholds # <-- THÊM DÒNG NÀY ĐỂ LƯU NGƯỠNG LÚC XÉT VÀO LOG
             }},
             upsert=True,
         )
@@ -668,6 +670,7 @@ async def process_danger_and_rules(app, payload: dict, house_id: str):
             house_id, result["violations"], sensor_data,
             app.state.device_status[house_id],
             triggered_rules=triggered_rules,
+            thresholds=thresholds # <-- TRUYỀN BIẾN THRESHOLDS ĐƯỢC LẤY Ở TRÊN VÀO HÀM LOG
         )
     else:
         await alert_dispatcher.auto_stop_alert(
