@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Query, Request
-from datetime import datetime
-
+from datetime import datetime, timezone, timedelta  # <--- THÊM timezone, timedelta
 router = APIRouter(prefix="/api/logging", tags=["Module 4"])
 
 sensor_collection = None
@@ -91,7 +90,7 @@ async def get_danger_history(
     if danger_collection is None:
         return []
 
-    # Lấy ngưỡng thực từ module2
+    # Lấy cấu hình ngưỡng hiện tại (Làm mốc dự phòng)
     thresholds = DEFAULT_THRESHOLDS
     mgr = getattr(request.app.state, "threshold_mgr", _threshold_mgr)
     if mgr:
@@ -100,14 +99,21 @@ async def get_danger_history(
         except Exception:
             pass
 
-    t_max = thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40)
-    h_max = thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80)
-    l_max = thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90)
+    # Đọc đúng cấu trúc dữ liệu phẳng từ API
+    t_max = thresholds.get("tempmax", thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("max", 40))
+    t_min = thresholds.get("tempmin", thresholds.get("temp", DEFAULT_THRESHOLDS["temp"]).get("min", 0))
 
+    h_max = thresholds.get("humimax", thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("max", 80))
+    h_min = thresholds.get("humimin", thresholds.get("humi", DEFAULT_THRESHOLDS["humi"]).get("min", 20))
+
+    l_max = thresholds.get("lightmax", thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("max", 90))
+    l_min = thresholds.get("lightmin", thresholds.get("light", DEFAULT_THRESHOLDS["light"]).get("min", 0))
+
+    # Cập nhật Label hiển thị dạng khoảng [Min - Max]
     SENSOR_THRESHOLD_LABEL = {
-        "temp": f"≤ {t_max}°C",
-        "humi": f"≤ {h_max}%",
-        "light": f"≤ {l_max}%",
+        "temp": f"[{t_min} - {t_max}]°C",
+        "humi": f"[{h_min} - {h_max}]%",
+        "light": f"[{l_min} - {l_max}]%",
     }
     SENSOR_UNIT = {"temp": "°C", "humi": "%", "light": "%"}
 
@@ -122,10 +128,16 @@ async def get_danger_history(
                 sensor = v.get("sensor", "Không rõ")
                 actual_val = v.get("value", "--")
                 unit = SENSOR_UNIT.get(sensor, "")
-                threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
 
-
-                level = "Nguy hiểm"
+                # FIX LỖI NGƯỠNG HIỆN TẠI: Ưu tiên lấy ngưỡng (threshold/limit) được lưu lúc sự cố xảy ra
+                historical_threshold = v.get("threshold") or v.get("limit") or doc.get("threshold")
+                
+                if historical_threshold is not None:
+                    # Hiển thị chính xác con số bị vi phạm lúc đó
+                    threshold_label = f"Mốc vi phạm: {historical_threshold}{unit}"
+                else:
+                    # Nếu DB không lưu, buộc fallback về ngưỡng cài đặt của ngày hôm nay
+                    threshold_label = SENSOR_THRESHOLD_LABEL.get(sensor, "--")
 
                 result.append(
                     {
@@ -133,23 +145,28 @@ async def get_danger_history(
                         "sensor": sensor,
                         "threshold": threshold_label,
                         "actual": f"{actual_val}{unit}",
-                        "level": level,
+                        "level": "Nguy hiểm",
                     }
                 )
         else:
-            # Fallback: doc cũ không có violations
+            # Fallback cho các bản ghi DB cũ
+            historical_threshold = doc.get("threshold")
+            if historical_threshold is not None:
+                threshold_label = str(historical_threshold)
+            else:
+                threshold_label = SENSOR_THRESHOLD_LABEL.get(doc.get("sensor", "temp"), "--")
+
             result.append(
                 {
                     "time": format_time(doc.get("time")),
                     "sensor": doc.get("sensor", "Không rõ"),
-                    "threshold": doc.get("threshold", "--"),
+                    "threshold": threshold_label,
                     "actual": doc.get("actual", "--"),
-                    "level": doc.get("level", "Cảnh báo"),
+                    "level": "Nguy hiểm",
                 }
             )
 
     return result
-
 
 # =============================
 # 2. SENSOR HISTORY
@@ -177,7 +194,12 @@ async def get_sensor_history(
         temp = doc.get("temp", 0)
         humi = doc.get("humi", 0)
         light = doc.get("light", 0)
-        status = get_sensor_status(temp, humi, light, thresholds)
+        
+        # SỬA LỖI: Ưu tiên lấy trạng thái (status) đã được gán tại thời điểm lưu DB
+        status = doc.get("status")
+        if not status:
+            # Chỉ khi DB không có sẵn trạng thái thì mới đành phải tính toán lại bằng cấu hình hiện tại
+            status = get_sensor_status(temp, humi, light, thresholds)
 
         result.append(
             {
@@ -190,7 +212,6 @@ async def get_sensor_history(
         )
 
     return result
-
 
 # =============================
 # 3. DEVICE HISTORY
