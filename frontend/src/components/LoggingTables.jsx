@@ -113,18 +113,10 @@ export default function LoggingTables({ houseid = "HS001" }) {
     };
 
     const TAB_CONFIG = {
-        danger: {
-            endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}`,
-        },
-        sensor: {
-            endpoint: `${API_BASE}/logging/sensor-history?houseid=${houseid}`,
-        },
-        device: {
-            endpoint: `${API_BASE}/logging/device-history?houseid=${houseid}`,
-        },
-        update: {
-            endpoint: `${API_BASE}/logging/system-updates?houseid=${houseid}`,
-        },
+        danger: { endpoint: `${API_BASE}/logging/danger-history?houseid=${houseid}` },
+        sensor: { endpoint: `${API_BASE}/logging/sensor-history?houseid=${houseid}` },
+        device: { endpoint: `${API_BASE}/logging/device-history?houseid=${houseid}` },
+        update: { endpoint: `${API_BASE}/logging/system-updates?houseid=${houseid}` },
     };
 
     // Filter dropdown
