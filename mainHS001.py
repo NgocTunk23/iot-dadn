@@ -12,8 +12,8 @@ import gc
 import music
 
 #? --- CẤU HÌNH ---
-SERVER_URL = "http://10.28.128.104:5000/update" 
-COMMANDS_URL = "http://10.28.128.104:5000/api/get-commands" 
+SERVER_URL = "http://10.28.129.106:5000/update" 
+COMMANDS_URL = "http://10.28.129.106:5000/api/get-commands" 
 HOUSEID = "HS001"
 
 tiny_rgb = RGBLed(pin16.pin, 4) 
@@ -22,16 +22,13 @@ event_manager.reset()
 
 IDDENCHONGTROM = 1
 
-# ĐÃ SỬA: Chuyển sang dạng Dictionary với Key là ID thiết bị
 current_device_status = {
-    IDDENCHONGTROM: {"status": False, "type": "denchongtrom"},  # LED ngoài cửa (PIR)
-    2: {"status": False, "type": "den"},  # LED trong nhà
-    3: {"status": False, "type": "den"},  # LED trong nhà
-    4: {"status": False, "type": "den"},  # LED trong nhà
-
-    6: {"status": 0, "type": "servo"},    # Động cơ Servo
-    
-    7: {"status": 0, "type": "quat"}      # Động cơ Quạt
+    IDDENCHONGTROM: {"status": False, "type": "denchongtrom"},
+    2: {"status": False, "type": "den"},
+    3: {"status": False, "type": "den"},
+    4: {"status": False, "type": "den"},
+    6: {"status": 0, "type": "servo"},
+    7: {"status": 0, "type": "quat"}
 }
 
 pir_trigger_time = 0
@@ -77,7 +74,6 @@ def check_and_log_motion():
     global pir_trigger_time, is_pir_active
     current_time = time.ticks_ms()
     
-    # ĐÃ SỬA: Truy xuất trạng thái qua key ["status"]
     if current_device_status[IDDENCHONGTROM]["status"] == True:
         if pin1.read_digital() == 1:
             tiny_rgb.show(IDDENCHONGTROM, hex_to_rgb("#ffffff"))
@@ -93,7 +89,6 @@ def check_and_log_motion():
 
 #? --- HÀM ĐỊNH TUYẾN & ĐIỀU KHIỂN THIẾT BỊ ---
 def check_devices(number, status, typ):
-    # ĐÃ SỬA: Chỉ cập nhật key ["status"], giữ nguyên key ["type"]
     if typ == "denchongtrom":
         if current_device_status[number]["status"] != status:
             current_device_status[number]["status"] = status
@@ -120,9 +115,18 @@ def check_devices(number, status, typ):
             val = round(translate(speed, 0, 100, 0, 1023))
             pin0.write_analog(val)
             current_device_status[number]["status"] = speed 
+            
+            # Phân giải giá trị tốc độ ra Mức quạt tương ứng để log
+            level = 0
+            if speed >= 100: level = 4
+            elif speed >= 90: level = 3
+            elif speed >= 80: level = 2
+            elif speed >= 70: level = 1
+            print("Trạng thái thiết bị Quạt: Đang chạy ở Mức", level)
+
 #? -----------------------------------------------------------------------------------------
 
-#? Đăng ký sự kiện gửi dữ liệu mỗi 10000ms (10 giây)
+# Đăng ký sự kiện gửi dữ liệu mỗi 10000ms (10 giây)
 event_manager.add_timer_event(10000, on_event_timer_callback_send_data)
 
 #? --- KHỞI ĐẦU ---
@@ -130,35 +134,49 @@ display.scroll('BD')
 mqtt.connect_wifi('ACLAB', 'ACLAB2023')
 mqtt.connect_broker(server='mqtt.ohstem.vn', port=1883, username='xinchao', password='')
 display.scroll('ALL')
-last_lcd_update = time.ticks_ms()
+
+last_api_call = time.ticks_ms() 
 
 # --- VÒNG LẶP CHÍNH ---
 while True:
     check_and_log_motion() 
     
-    # ĐÃ SỬA: Đưa biến cảnh báo ra đầu vòng lặp để tránh NameError 
     is_danger_alert = False 
     
-    try: 
-        response = urequests.get(COMMANDS_URL)
-        if response.status_code == 200:
-            data = response.json()
-            
-            if 'is_danger' in data:
-                is_danger_alert = data['is_danger']
+    # Chỉ gọi API lấy lệnh mỗi 3000ms (3 giây)
+    if time.ticks_diff(time.ticks_ms(), last_api_call) > 500:
+        try: 
+            response = urequests.get(COMMANDS_URL)
+            if response.status_code == 200:
+                data = response.json()
+                
+                if 'is_danger' in data:
+                    is_danger_alert = data['is_danger']
 
-            if 'numberdevices' in data:
-                commands = data['numberdevices'] 
-                for cmd in commands:
-                    dev_id = cmd['numberdevice']     
-                    dev_status = cmd['status'] 
-                    dev_type = cmd['type'] 
-                    check_devices(dev_id, dev_status, dev_type)
-        response.close()
-    except Exception as e:
-        print("Lỗi nhận lệnh từ Server:", e)
-        try: response.close()
-        except: pass
+                if 'numberdevices' in data:
+                    commands = data['numberdevices'] 
+                    for cmd in commands:
+                        # Dùng .get() thay vì [] để nếu server thiếu dữ liệu thì sẽ không bị văng lỗi
+                        dev_id = cmd.get('numberdevice')     
+                        dev_status = cmd.get('status') 
+                        dev_type = cmd.get('type') 
+                        
+                        # Nếu Server KHÔNG gửi 'type', mạch sẽ tự tìm type dựa vào ID
+                        if dev_type == None and dev_id in current_device_status:
+                            dev_type = current_device_status[dev_id]["type"]
+                        
+                        # Chỉ thực thi khi có đủ id và status
+                        if dev_id is not None and dev_status is not None:
+                            check_devices(dev_id, dev_status, dev_type)
+            response.close()
+        except Exception as e:
+            print("Lỗi nhận lệnh từ Server:", e)
+            try:
+                response.close()
+            except:
+                pass
+            
+        last_api_call = time.ticks_ms() 
 
     # Xử lý bật nhạc và đếm 15s để tắt
     if is_danger_alert == True:
