@@ -108,10 +108,17 @@ async def handle_data(payload: dict = Body(...)):
         update_sensor_connection(now_utc)
 
         is_danger, new_status = await process_danger_and_rules(app, payload, house_id)
-        module3.device_status_map[house_id] = new_status
-
+        
         if house_id not in last_device_status: last_device_status[house_id] = {}
         active_rule = rule_mgr.get_active_rule_name(house_id)
+        
+        # SỬA LỖI TỰ ĐỘNG TẮT: 
+        # Chỉ ghi đè trạng thái nếu hệ thống báo nguy hiểm (báo cháy) 
+        # HOẶC có một kịch bản tự động thực sự đang được kích hoạt.
+        if is_danger or active_rule:
+            module3.device_status_map[house_id] = new_status
+
+
         for dev in payload.get("numberdevices", []):
             num, stat = dev.get("numberdevice"), dev.get("status")
             if last_device_status[house_id].get(num) != stat:

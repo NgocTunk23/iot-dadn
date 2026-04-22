@@ -187,7 +187,7 @@ while True:
             print("! PHÁT NHẠC CẢNH BÁO NGƯỠNG !")
     else:
         if is_music_playing == True:
-            if time.ticks_diff(time.ticks_ms(), danger_cleared_time) > 15000:
+            if time.ticks_diff(time.ticks_ms(), danger_cleared_time) > 5000:
                 music.stop() 
                 is_music_playing = False
                 print("- ĐÃ QUA 15S AN TOÀN, TẮT NHẠC -")
