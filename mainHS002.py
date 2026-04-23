@@ -126,8 +126,8 @@ def check_devices(number, status, typ):
 
 #? -----------------------------------------------------------------------------------------
 
-# Đăng ký sự kiện gửi dữ liệu mỗi 10000ms (10 giây)
-event_manager.add_timer_event(10000, on_event_timer_callback_send_data)
+# Đăng ký sự kiện gửi dữ liệu mỗi 5000ms (5 giây)
+event_manager.add_timer_event(5000, on_event_timer_callback_send_data)
 
 #? --- KHỞI ĐẦU ---
 display.scroll('BD')
