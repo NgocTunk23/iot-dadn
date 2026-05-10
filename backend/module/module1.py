@@ -344,7 +344,10 @@ class DashboardAnalytics:
 
     async def get_realtime_trend_data(self, houseid="HS001"):
         # 1. ĐÃ SỬA: Lấy thời gian UTC thực tế từ hệ thống để đồng bộ hoàn toàn với Mongo DB
-        now_utc = datetime.now(timezone.utc)
+        # SỬA LỖI: Đồng bộ truy vấn với thời gian VN (+7 tiếng) đã lưu trong Database
+        now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+        now_utc = now_vn.replace(tzinfo=None)
+        
         intervals = [30, 25, 20, 15, 10, 5, 0]
         labels = ["30", "25", "20", "15", "10", "5", "Hiện tại"]
         

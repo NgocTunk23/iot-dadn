@@ -106,6 +106,8 @@ async def handle_data(payload: dict = Body(...)):
             if "type" not in d: d["type"] = dev_map.get(num, {}).get("type", "unknown")
 
     try:
+        # LƯU TRẠNG THÁI KỊCH BẢN CŨ ĐỂ ĐỐI CHIẾU
+        prev_active_rule = rule_mgr.get_active_rule_name(house_id)
         # 1. Chạy hàm kiểm tra luật và cảnh báo TRƯỚC để đánh giá dữ liệu
         is_danger, new_status = await process_danger_and_rules(app, payload, house_id)
         
@@ -144,10 +146,10 @@ async def handle_data(payload: dict = Body(...)):
         
         active_rule = rule_mgr.get_active_rule_name(house_id)
         
-        # SỬA LỖI TỰ ĐỘNG TẮT: 
-        # Chỉ ghi đè trạng thái nếu hệ thống báo nguy hiểm (báo cháy) 
-        # HOẶC có một kịch bản tự động thực sự đang được kích hoạt.
-        if is_danger or active_rule:
+        # SỬA LỖI TỰ ĐỘNG KHÔI PHỤC: 
+        # Cập nhật thiết bị nếu có nguy hiểm, hoặc có kịch bản đang chạy, 
+        # HOẶC vừa thoát khỏi kịch bản (prev_active_rule có nhưng active_rule là None)
+        if is_danger or active_rule or (prev_active_rule and not active_rule):
             module3.device_status_map[house_id] = new_status
 
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

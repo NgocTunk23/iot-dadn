@@ -12,8 +12,8 @@ import gc
 import music
 
 #? --- CẤU HÌNH ---
-SERVER_URL = "http://10.28.129.106:5000/update" 
-COMMANDS_URL = "http://10.28.129.106:5000/api/get-commands" 
+SERVER_URL = "http://10.32.250.216:5000/update" 
+COMMANDS_URL = "http://10.32.250.216:5000/api/get-commands"
 HOUSEID = "HS001"
 
 tiny_rgb = RGBLed(pin16.pin, 4) 
@@ -131,7 +131,7 @@ event_manager.add_timer_event(5000, on_event_timer_callback_send_data)
 
 #? --- KHỞI ĐẦU ---
 display.scroll('BD')
-mqtt.connect_wifi('ACLAB', 'ACLAB2023')
+mqtt.connect_wifi('Wifimmmm', '12345678')
 mqtt.connect_broker(server='mqtt.ohstem.vn', port=1883, username='xinchao', password='')
 display.scroll('ALL')
 

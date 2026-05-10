@@ -29,13 +29,19 @@ async def log_device_state(houseid, numberdevice, dev_type, new_status, old_stat
     if _house_col is None: return
     try:
         device_log_col = _house_col.database.Device_log
+        
+        # Lấy giờ UTC và cộng thêm 7 tiếng cho giờ Việt Nam
         now_utc = datetime.now(timezone.utc)
-        timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        now_vn = now_utc + timedelta(hours=7)
+        now_vn_naive = now_vn.replace(tzinfo=None) # Xóa tzinfo để lưu vào MongoDB
+        
+        timestamp_str = now_vn_naive.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         log_id = f"{timestamp_str}{numberdevice}_{houseid}"
         
-        # Đổi "status" thành "old_status" và "new_status"
         log_entry = {
-            "_id": log_id, "time": now_utc, "houseid": houseid, 
+            "_id": log_id, 
+            "time": now_vn_naive, # LƯU Ý SỬA TẠI ĐÂY: Dùng now_vn_naive thay vì now_utc
+            "houseid": houseid, 
             "numberdevice": numberdevice, "type": dev_type, 
             "old_status": old_status, 
             "new_status": new_status, 
