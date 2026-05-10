@@ -53,7 +53,8 @@ export default function useDevices(addToast) {
       return beVal;
   }, []);
 
-  const syncToBackend = useCallback(async (newState) => {
+  // Thêm tham số customReason vào
+  const syncToBackend = useCallback(async (newState, customReason = null) => {
     try {
       const commands = [];
       for(const key of Object.keys(newState)) {
@@ -65,7 +66,12 @@ export default function useDevices(addToast) {
           commands.push([id, beVal]);
       }
       if(commands.length > 0) {
-        await axios.post(`${API_BASE}/control`, { houseid: houseId, commands });
+        // Gói thêm reason vào payload nếu có
+        const payload = { houseid: houseId, commands };
+        if (customReason) {
+            payload.reason = customReason; 
+        }
+        await axios.post(`${API_BASE}/control`, payload);
       }
     } catch (err) {
       console.error('Lỗi gửi lệnh điều khiển:', err);
@@ -289,7 +295,7 @@ export default function useDevices(addToast) {
              const dConf = getDeviceConfig(act.numberdevice);
              if(dConf) next[`device_${act.numberdevice}`] = parseBEStatusToFE(act.numberdevice, dConf.typeRaw, act.status);
           });
-          syncToBackend(next);
+          syncToBackend(next, `Người dùng bật chế độ ${targetMode.name}`);
           return next;
         });
 
@@ -314,7 +320,7 @@ export default function useDevices(addToast) {
                   next[`device_${act.numberdevice}`] = feVal;
              }
           });
-          syncToBackend(next);
+          syncToBackend(next, `Người dùng tắt chế độ ${targetMode.name}`);
           return next;
         });
         setModes(prev => prev.map(m => m.id === id ? { ...m, active: false } : m));

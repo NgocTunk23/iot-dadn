@@ -79,13 +79,15 @@ async def update_control_override(payload: dict = Body(...)):
     if _house_col is None: return {"status": "Error", "message": "Database chưa sẵn sàng"}, 500
     house_id = payload.get("houseid", "HS001")
     new_cmds = payload.get("commands")
+    
+    # LẤY LÝ DO TỪ FRONTEND, NẾU KHÔNG CÓ THÌ MẶC ĐỊNH LÀ "Người dùng bật thủ công"
+    reason_payload = payload.get("reason", "Người dùng bật thủ công")
+    
     if not new_cmds: return {"status": "Error", "message": "Thiếu lệnh"}, 400
     try:
         house = await _house_col.find_one({"_id.houseid": house_id})
         dev_map = {d["numberdevice"]: d for d in house.get("numberdevices", [])} if house else {}
 
-#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        # Lấy trạng thái hiện tại (cũ) chuyển thành dict để dễ tra cứu TRƯỚC KHI ghi đè
         old_status_list = device_status_map.get(house_id, [])
         old_status_dict = {item[0]: item[1] for item in old_status_list}
         
@@ -93,13 +95,11 @@ async def update_control_override(payload: dict = Body(...)):
         for cmd in new_cmds:
             d_id, d_val = cmd[0], cmd[1]
             d_type = dev_map.get(d_id, {}).get("type", "unknown")
-            
-            # Lấy ra trạng thái cũ tương ứng của thiết bị này
             old_val = old_status_dict.get(d_id, False) 
             
-            # Truyền old_status vào hàm
-            await log_device_state(house_id, d_id, d_type, new_status=d_val, old_status=old_val, reason="Người dùng bật thủ công")
-#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # QUAN TRỌNG: CHỈ GHI LOG NẾU TRẠNG THÁI THỰC SỰ THAY ĐỔI
+            if old_val != d_val:
+                await log_device_state(house_id, d_id, d_type, new_status=d_val, old_status=old_val, reason=reason_payload)
             
         from module.module2 import sync_device_state
         await sync_device_state(_house_col, house_id, new_cmds)
