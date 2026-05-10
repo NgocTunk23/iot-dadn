@@ -98,7 +98,7 @@ async def update_control_override(payload: dict = Body(...)):
             old_val = old_status_dict.get(d_id, False) 
             
             # Truyền old_status vào hàm
-            await log_device_state(house_id, d_id, d_type, new_status=d_val, old_status=old_val, reason="Người dùng điều khiển thủ công")
+            await log_device_state(house_id, d_id, d_type, new_status=d_val, old_status=old_val, reason="Người dùng bật thủ công")
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             
         from module.module2 import sync_device_state
@@ -168,7 +168,7 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
         old_val = old_status_dict.get(d_id, False)
         
         # Truyền old_status vào
-        await log_device_state(houseid, d_id, dev_map.get(d_id, "unknown"), new_status=d_val, old_status=old_val, reason=f"Chế độ: {name}")
+        await log_device_state(houseid, d_id, dev_map.get(d_id, "unknown"), new_status=d_val, old_status=old_val, reason=f"Người dùng bật chế độ {name}")
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     return {"status": "Success", "new_commands": new_status}

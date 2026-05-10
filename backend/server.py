@@ -159,14 +159,26 @@ async def handle_data(payload: dict = Body(...)):
             # Lấy trạng thái cũ ra biến riêng
             old_stat = last_device_status[house_id].get(num)
             
+            # Tìm vòng lặp xử lý ghi log thiết bị (for dev in payload.get("numberdevices", []):)
             if old_stat != stat:
                 from module.module3 import log_device_state
-                reason = f"Tự động (Kịch bản: {active_rule})" if active_rule else "Thiết bị phản hồi trạng thái"
                 
-                # Gọi hàm và truyền thêm old_status (nếu old_stat chưa có thì mặc định False)
-                await log_device_state(house_id, num, dev_map.get(num, {}).get("type", "unknown"), new_status=stat, old_status=old_stat if old_stat is not None else False, reason=reason)
+                # LOGIC MỚI:
+                # Nếu là thiết bị số 1 (Đèn báo trộm), trạng thái mới là Bật (True/1) và đang có Danger (PIR kích hoạt)
+                if num == 1 and stat and is_danger:
+                    reason = "Phát hiện có người"
+                elif active_rule:
+                    reason = f"Thực hiện kịch bản {active_rule}"
+                else:
+                    reason = "Thiết bị phản hồi trạng thái"
                 
-                last_device_status[house_id][num] = stat
+                await log_device_state(
+                    house_id, num, 
+                    dev_map.get(num, {}).get("type", "unknown"), 
+                    new_status=stat, 
+                    old_status=old_stat if old_stat is not None else False, 
+                    reason=reason
+                )
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     except Exception as e: print(f"[SERVER] Lỗi: {e}")

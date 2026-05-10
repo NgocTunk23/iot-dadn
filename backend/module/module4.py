@@ -297,23 +297,31 @@ async def get_device_history(
             # Các trường hợp thiết bị khác (nếu có)
             return str(val)
 
+        # result.append(
+        #     {
+        #         "time": format_time(doc.get("time")),
+        #         "device": DEVICE_MAP.get(device_num, f"Thiết bị {device_num}"),
+        #         "old_value": format_status(old_status, device_num),
+        #         "new_value": format_status(new_status, device_num),
+        #         "actor": (
+        #             "Hệ thống"
+        #             if any(
+        #                 kw in reason.lower()
+        #                 for kw in ["hệ thống", "tự động", "ngừng phát hiện"]
+        #             )
+        #             else "Người dùng"
+        #         ),
+        #     }
+        # )
         result.append(
             {
                 "time": format_time(doc.get("time")),
                 "device": DEVICE_MAP.get(device_num, f"Thiết bị {device_num}"),
                 "old_value": format_status(old_status, device_num),
                 "new_value": format_status(new_status, device_num),
-                "actor": (
-                    "Hệ thống"
-                    if any(
-                        kw in reason.lower()
-                        for kw in ["hệ thống", "tự động", "ngừng phát hiện"]
-                    )
-                    else "Người dùng"
-                ),
+                "actor": doc.get("reason", "Không rõ") # Trả về lý do cụ thể từ DB
             }
         )
-
     return result
 
 
