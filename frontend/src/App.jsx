@@ -17,7 +17,7 @@ const PAGE_TITLES = {
   dashboard: 'Tổng quan Hệ thống',
   devices: 'Quản lý Thiết bị',
   alerts: 'Cảnh báo & Ngưỡng',
-  settings: 'Cài đặt Hệ thống',
+  settings: 'Tài khoản',
 };
 import React, { useState, useEffect } from 'react'; // Nhớ import useEffect
 

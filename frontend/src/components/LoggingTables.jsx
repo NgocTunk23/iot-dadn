@@ -184,7 +184,7 @@ export default function LoggingTables({ houseid = "HS001" }) {
                 <tr style={{ borderBottom: "1px solid #1e2939" }}>
                     <th style={thStyle}>Thời gian</th><th style={thStyle}>Thiết bị</th>
                     <th style={thStyle}>Giá trị cũ</th><th style={thStyle}>Giá trị mới</th>
-                    <th style={thStyle}>Lý do bật</th>
+                    <th style={thStyle}>Lý do</th>
                 </tr>
             );
             case "update": return (

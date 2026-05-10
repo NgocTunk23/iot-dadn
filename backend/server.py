@@ -153,32 +153,58 @@ async def handle_data(payload: dict = Body(...)):
             module3.device_status_map[house_id] = new_status
 
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # Lấy trạng thái chuyển động từ Yolo:Bit gửi lên
+        current_pir = payload.get("pir_active", False)
+        old_pir = last_device_status[house_id].get("pir_active", False)
+
         for dev in payload.get("numberdevices", []):
             num, stat = dev.get("numberdevice"), dev.get("status")
-            
-            # Lấy trạng thái cũ ra biến riêng
             old_stat = last_device_status[house_id].get(num)
             
-            # Tìm vòng lặp xử lý ghi log thiết bị (for dev in payload.get("numberdevices", []):)
-            if old_stat != stat:
-                from module.module3 import log_device_state
+            # KIỂM TRA RIÊNG CHO ĐÈN 1: Bắt sự kiện có người hoặc hết người
+            # Đèn sẽ được ghi log nếu Chống trộm đang bật (stat == True) VÀ cảm biến thay đổi
+            pir_just_triggered = (num == 1 and stat == True and current_pir == True and old_pir == False)
+            pir_just_cleared = (num == 1 and stat == True and current_pir == False and old_pir == True)
+
+            if (old_stat != stat) or pir_just_triggered or pir_just_cleared:
+                from module.module3 import log_device_state, device_status_map
                 
-                # LOGIC MỚI:
-                # Nếu là thiết bị số 1 (Đèn báo trộm), trạng thái mới là Bật (True/1) và đang có Danger (PIR kích hoạt)
-                if num == 1 and stat and is_danger:
+                log_stat = stat # Mặc định log trạng thái từ Yolo:Bit gửi
+                
+                # Phân loại lý do và thiết lập lại trạng thái hiển thị cho đúng thực tế
+                if pir_just_triggered:
                     reason = "Phát hiện có người"
+                    log_stat = True  # Thực tế là đèn đang nháy sáng
+                elif pir_just_cleared:
+                    reason = "Không còn người, tự tắt"
+                    log_stat = False # Thực tế là đèn đã tự tắt sau 10s
                 elif active_rule:
                     reason = f"Thực hiện kịch bản {active_rule}"
+                elif num == 1 and stat and current_pir:
+                    reason = "Phát hiện có người"
                 else:
                     reason = "Thiết bị phản hồi trạng thái"
                 
-                await log_device_state(
-                    house_id, num, 
-                    dev_map.get(num, {}).get("type", "unknown"), 
-                    new_status=stat, 
-                    old_status=old_stat if old_stat is not None else False, 
-                    reason=reason
-                )
+                desired_list = device_status_map.get(house_id, [])
+                desired_dict = {item[0]: item[1] for item in desired_list}
+                
+                # Ngăn chặn Spam Log khi người dùng tự thao tác trên Web
+                if reason == "Thiết bị phản hồi trạng thái" and desired_dict.get(num) == stat:
+                    pass 
+                else:
+                    await log_device_state(
+                        house_id, num, 
+                        dev_map.get(num, {}).get("type", "unknown"), 
+                        new_status=log_stat, 
+                        old_status=old_stat if old_stat is not None else False, 
+                        reason=reason
+                    )
+            
+            # Cập nhật trạng thái thiết bị
+            last_device_status[house_id][num] = stat
+
+        # QUAN TRỌNG: Lưu lại trạng thái PIR để lần sau so sánh
+        last_device_status[house_id]["pir_active"] = current_pir
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     except Exception as e: print(f"[SERVER] Lỗi: {e}")

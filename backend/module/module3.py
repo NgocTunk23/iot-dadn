@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, Query
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from pydantic.v1.json import ENCODERS_BY_TYPE
+from bson.errors import InvalidId
 
 # Patch cho ObjectId
 ENCODERS_BY_TYPE[ObjectId] = str
@@ -81,7 +82,7 @@ async def update_control_override(payload: dict = Body(...)):
     new_cmds = payload.get("commands")
     
     # LẤY LÝ DO TỪ FRONTEND, NẾU KHÔNG CÓ THÌ MẶC ĐỊNH LÀ "Người dùng bật thủ công"
-    reason_payload = payload.get("reason", "Người dùng bật thủ công")
+    reason_payload = payload.get("reason", "Người dùng thực hiện thủ công")
     
     if not new_cmds: return {"status": "Error", "message": "Thiếu lệnh"}, 400
     try:
@@ -167,8 +168,9 @@ async def activate_scene_endpoint(payload: dict = Body(...)):
         # Lấy trạng thái cũ của thiết bị này
         old_val = old_status_dict.get(d_id, False)
         
-        # Truyền old_status vào
-        await log_device_state(houseid, d_id, dev_map.get(d_id, "unknown"), new_status=d_val, old_status=old_val, reason=f"Người dùng bật chế độ {name}")
+        # ---> THÊM IF ĐỂ CHỈ GHI LOG KHI CÓ SỰ THAY ĐỔI <---
+        if old_val != d_val:
+            await log_device_state(houseid, d_id, dev_map.get(d_id, "unknown"), new_status=d_val, old_status=old_val, reason=f"Người dùng bật chế độ {name}")
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     return {"status": "Success", "new_commands": new_status}
@@ -193,3 +195,24 @@ async def get_devices_info(houseid: str = Query("HS001")):
         d_name = f"Đèn {num}" if d_type == "den" else (dev.get("name") or get_default_device_name(num, d_type))
         result.append({"numberdevice": num, "type": d_type, "name": d_name, "status": curr, "status_text": st_txt})
     return {"houseid": houseid, "devices": result}
+
+
+@router.delete("/scenes")
+async def delete_scene(name: str = Query(None), houseid: str = Query("HS001")):
+    if not _scene_manager: 
+        return {"status": "Error", "message": "Manager chưa khởi tạo"}
+    
+    mode_col = _scene_manager._get_mode_col()
+    try:
+        if name:
+            # Xóa dựa trên houseid và name (tên chế độ) do Frontend gửi lên
+            result = await mode_col.delete_one({"houseid": houseid, "name": name})
+            
+            if result.deleted_count > 0:
+                return {"status": "Success", "message": "Đã xóa chế độ thành công"}
+            else:
+                return {"status": "Error", "message": "Không tìm thấy chế độ để xóa"}
+                
+        return {"status": "Error", "message": "Thiếu thông tin name"}
+    except Exception as e:
+        return {"status": "Error", "message": str(e)}
