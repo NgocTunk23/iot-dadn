@@ -104,3 +104,21 @@ db.House.insertOne(
     ]
   }
 )
+docker exec -it iot_mongodb mongosh
+use iot_database
+show collections
+db.User.find().sort({time: -1}).limit(10)
+
+[
+  {
+    _id: 'NgocTune',
+    password: 'password123',
+    cccd: '079099123456',
+    fullname: 'Nguyễn Ngọc Tôn',
+    dateofbirth: ISODate('2005-11-14T00:00:00.000Z'),
+    address: 'Dĩ An, Bình Dương',
+    createdat: ISODate('2026-04-14T15:25:00.000Z'),
+    email: 'ton.nguyen1411030723@hcmut.edu.vn',
+    phone: '0945498375'
+  }
+]
