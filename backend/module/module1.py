@@ -58,7 +58,12 @@ async def check_sensor_connection():
             now_vn = datetime.now(tz_vn)
             for houseid, last_time in list(last_sensor_update_time.items()):
                 if is_sensor_connected.get(houseid, False):
-                    diff = (now_vn.replace(tzinfo=None) - last_time).total_seconds()
+                    if last_time.tzinfo is None:
+                        # Nếu last_time không chứa múi giờ (offset-naive)
+                        diff = (now_vn.replace(tzinfo=None) - last_time).total_seconds()
+                    else:
+                        # Nếu last_time có chứa múi giờ (offset-aware)
+                        diff = (now_vn - last_time).total_seconds()
                     
                     if diff > connection_timeout_seconds:
                         is_sensor_connected[houseid] = False
