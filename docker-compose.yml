@@ -20,6 +20,8 @@ services:
       - db
     environment:
       - MONGO_URL=mongodb://db:27017
+      - JWT_SECRET=0Q_ZIyGYpxHvO9ZBh8c7PT09HpQuuF9r8Mj47c9ONFE
+      - APP_BASE_URL=http://localhost:80
       - GMAIL_SENDER=tothehung2204@gmail.com
       - GMAIL_PASSWORD=tsnfftndcrbzmehl
       - TZ=Asia/Ho_Chi_Minh
@@ -31,3 +33,5 @@ services:
       - "80:80"
     depends_on:
       - backend
+    environment:
+      - VITE_API_URL=http://backend:5000

@@ -119,6 +119,7 @@ db.User.find().sort({time: -1}).limit(10)
     address: 'Dĩ An, Bình Dương',
     createdat: ISODate('2026-04-14T15:25:00.000Z'),
     email: 'ton.nguyen1411030723@hcmut.edu.vn',
-    phone: '0945498375'
+    phone: '0945498375',
+    tokenversion: 28
   }
 ]

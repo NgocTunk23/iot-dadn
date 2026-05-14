@@ -27,6 +27,7 @@ function App() {
   const [userData, setUserData] = useState(null);
   const [houseId, setHouseId] = useState('HS001');
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [authToken, setAuthToken] = useState(null);
   const { data } = useSensorData();
   const { messages, addToast, dismissToast } = useToast();
   const devices = useDevices(addToast);
@@ -34,12 +35,14 @@ function App() {
 
   useEffect(() => {
     const storedHouseId = localStorage.getItem('houseid');
+    const storedToken = localStorage.getItem('token');
     // Kiểm tra cả localStorage và sessionStorage
     const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
 
-    if (storedHouseId && storedUser) {
+    if (storedHouseId && storedUser && storedToken) {
       setHouseId(storedHouseId);
       setUserData(JSON.parse(storedUser));
+      setAuthToken(storedToken);
       setIsAuthenticated(true);
     }
   }, []);
@@ -47,9 +50,11 @@ function App() {
   const handleLogout = () => {
     setIsAuthenticated(false); // Ép React hiển thị lại <Login />
     setUserData(null);         // Xóa dữ liệu user trong state
+    setAuthToken(null);
     localStorage.removeItem('houseid');
     localStorage.removeItem('user');
     localStorage.removeItem('username');
+    localStorage.removeItem('token');
     setActiveTab('dashboard'); // Tiện tay reset tab về dashboard cho lần đăng nhập sau
   };
 
@@ -59,7 +64,7 @@ function App() {
 
   const handleLoginSubmit = async (credentials) => {
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -74,10 +79,13 @@ function App() {
       if (data.success) {
         setUserData(data.user);
         setHouseId(data.houseid);
+        setAuthToken(data.token);
         setIsAuthenticated(true);
         // Lưu đúng houseid mà backend đã xác nhận
         localStorage.setItem('houseid', data.houseid);
+        localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('username', JSON.stringify(data.user._id));
+        localStorage.setItem('token', data.token);
       } else {
         alert(data.message);
       }
@@ -87,8 +95,34 @@ function App() {
   };
 
   // 3. Nếu CHƯA đăng nhập -> Chỉ render màn hình Login
+  const handleForgotPassword = async ({ email }) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: email })
+      });
+      return await response.json();
+    } catch (error) {
+      return { success: false, message: 'Lỗi kết nối server' };
+    }
+  };
+
+  const handleResetPassword = async ({ token, username, houseid, newPassword }) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, username, houseid, new_password: newPassword })
+      });
+      return await response.json();
+    } catch (error) {
+      return { success: false, message: 'Lỗi kết nối server' };
+    }
+  };
+
   if (!isAuthenticated) {
-    return <Login onLoginSubmit={handleLoginSubmit} />;
+    return <Login onLoginSubmit={handleLoginSubmit} onForgotPassword={handleForgotPassword} onResetPassword={handleResetPassword} />;
   }
 
   // 4. Nếu ĐÃ đăng nhập -> Render giao diện chính của App

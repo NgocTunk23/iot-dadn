@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 
-const API = 'http://localhost:5000/api';
+const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:5000/api';
 
 /* ─────────────────── GLOBAL KEYFRAME STYLES ─────────────────── */
 const GLOBAL_CSS = `
@@ -2258,7 +2258,7 @@ export default function AlertTab({ houseId, addToast, onDeviceUpdate }) {
     const checkBackend = async () => {
       try {
         // Truyền dynamic houseId vào API
-        const res = await axios.get(`http://localhost:5000/api/sensor-data?houseid=${houseId}`);
+        const res = await axios.get(`${API}/sensor-data?houseid=${houseId}`);
         if (res.data && res.data.numberdevice) {
           const currState = JSON.stringify(res.data.numberdevice);
           if (prevState && prevState !== currState) {

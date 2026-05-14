@@ -231,6 +231,42 @@ async def send_email(houseid: str, violations: list, sensor_data: dict,
         return {"ok": False, "channel": "email", "error": str(e)}
 
 
+async def send_plain_email(to_address: str, subject: str, body: str,
+                           sender: str = None, password: str = None) -> dict:
+    _sender = sender or GMAIL_SENDER
+    _pass = password or GMAIL_PASSWORD
+
+    if not _sender or not _pass:
+        return {"ok": False, "channel": "email", "error": "Thiếu GMAIL_SENDER hoặc GMAIL_PASSWORD"}
+    if not to_address:
+        return {"ok": False, "channel": "email", "error": "Thiếu địa chỉ email nhận"}
+
+    mail = MIMEMultipart("alternative")
+    mail["Subject"] = subject
+    mail["From"] = f"Smart Home <{_sender}>"
+    mail["To"] = to_address
+    mail.attach(MIMEText(body, "plain", "utf-8"))
+
+    def _smtp_send():
+        with smtplib.SMTP("smtp.gmail.com", 587) as srv:
+            srv.ehlo()
+            srv.starttls()
+            srv.login(_sender, _pass)
+            srv.sendmail(_sender, to_address, mail.as_string())
+
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, _smtp_send)
+        print(f"[NOTIFIER] ✅ Plain email → {to_address}")
+        return {"ok": True, "channel": "email"}
+    except smtplib.SMTPAuthenticationError:
+        err = "Xác thực Gmail thất bại – kiểm tra lại App Password."
+        print(f"[NOTIFIER] ❌ Plain email: {err}")
+        return {"ok": False, "channel": "email", "error": err}
+    except Exception as e:
+        print(f"[NOTIFIER] ❌ Plain email exception: {e}")
+        return {"ok": False, "channel": "email", "error": str(e)}
+
+
 # ── dispatch_all: gọi từ AlertDispatcher trong module2.py ──────
 
 async def dispatch_all_channels(houseid: str, violations: list,

@@ -1,14 +1,35 @@
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body, Query, Header
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from pydantic.v1.json import ENCODERS_BY_TYPE
 from bson.errors import InvalidId
+import secrets
+import jwt
+import os
+from module.notifiers import send_email, send_plain_email
+
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5173")
+RESET_TOKEN_EXPIRE_MINUTES = 60
 
 # Patch cho ObjectId
 ENCODERS_BY_TYPE[ObjectId] = str
 
 # Router KHÔNG có prefix ở đây (sẽ được định nghĩa ở server.py)
 router = APIRouter()
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET", "iot-dadn-secret-key")
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 240
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    payload = data.copy()
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    payload.update({"exp": expire, "iat": datetime.now(timezone.utc)})
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
+def decode_access_token(token: str):
+    return jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
 
 def get_default_device_name(dev_num, dev_type):
     if dev_type == "denchongtrom": return "Đèn báo trộm" 
@@ -63,6 +84,11 @@ async def login_api_override(payload: dict = Body(...)):
         user = await users_collection.find_one({"$or": [{"email": username_input}, {"_id": username_input}]})
         if not user or user.get("password") != password: return {"success": False, "message": "Sai tài khoản/mật khẩu"}
         actual_username = user.get("_id")
+        # Nếu user chưa có tokenversion thì khởi tạo mặc định
+        if "tokenversion" not in user:
+            await users_collection.update_one({"_id": actual_username}, {"$set": {"tokenversion": 0}})
+            user["tokenversion"] = 0
+
         # Sử dụng regex để kiểm tra house_id không phân biệt hoa thường
         house = await _house_col.find_one({
             "_id.houseid": {"$regex": f"^{house_id}$", "$options": "i"}, 
@@ -72,8 +98,152 @@ async def login_api_override(payload: dict = Body(...)):
         
         # Đảm bảo trả về đúng houseid từ DB (để đồng nhất hoa thường)
         db_house_id = house["_id"]["houseid"]
-        return {"success": True, "message": "Thành công", "user": {k:v for k,v in user.items() if k!="password"}, "houseid": db_house_id}
+        access_token = create_access_token({
+            "sub": actual_username,
+            "houseid": db_house_id,
+            "tokenversion": user.get("tokenversion", 0)
+        })
+        safe_user = {k: v for k, v in user.items() if k != "password"}
+        return {
+            "success": True,
+            "message": "Thành công",
+            "user": safe_user,
+            "houseid": db_house_id,
+            "token": access_token
+        }
     except Exception as e: return {"success": False, "message": f"Lỗi: {str(e)}"}
+
+@router.post("/forgot-password")
+async def forgot_password(payload: dict = Body(...)):
+    if _house_col is None: return {"success": False, "message": "Backend chưa sẵn sàng (Thiếu Database)"}
+    users_collection = _house_col.database.User
+    username_input = payload.get("username")
+    if not username_input:
+        return {"success": False, "message": "Thiếu thông tin"}
+    try:
+        user = await users_collection.find_one({"$or": [{"email": username_input}, {"_id": username_input}]})
+        if not user:
+            return {"success": False, "message": "Không tìm thấy tài khoản"}
+
+        actual_username = user.get("_id")
+        # Tìm tất cả house của user
+        houses = await _house_col.find({"_id.username": actual_username}).to_list(length=None)
+        if not houses:
+            return {"success": False, "message": "Không tìm thấy nhà nào thuộc tài khoản này"}
+
+        # Chọn house đầu tiên
+        first_house = houses[0]
+        house_id = first_house["_id"]["houseid"]
+
+        reset_token = secrets.token_urlsafe(32)
+        reset_expires = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
+
+        await users_collection.update_one(
+            {"_id": actual_username},
+            {"$set": {
+                "password_reset_token": reset_token,
+                "password_reset_expires": reset_expires
+            },
+             "$inc": {"tokenversion": 1}}
+        )
+
+        reset_link = f"{APP_BASE_URL}/reset-password?token={reset_token}&username={actual_username}&houseid={house_id}"
+        email_subject = f"Smart Home - Yêu cầu đặt lại mật khẩu cho {house_id}"
+        email_body = (
+            f"Xin chào {actual_username},\n\n"
+            f"Bạn hoặc người dùng của bạn đã yêu cầu đặt lại mật khẩu cho House ID {house_id}.\n"
+            f"Vui lòng nhấp vào liên kết bên dưới để tạo mật khẩu mới:\n\n"
+            f"{reset_link}\n\n"
+            f"Liên kết này có hiệu lực trong {RESET_TOKEN_EXPIRE_MINUTES} phút.\n"
+            f"Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này."
+        )
+
+        email_result = await send_plain_email(
+            to_address=user.get("email"),
+            subject=email_subject,
+            body=email_body,
+        )
+
+        if not email_result.get("ok"):
+            return {"success": False, "message": f"Không thể gửi email: {email_result.get('error')}"}
+
+        return {
+            "success": True,
+            "message": "Đã gửi liên kết đặt lại mật khẩu tới email của bạn. Vui lòng kiểm tra hộp thư.",
+            "resetLink": reset_link
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Lỗi: {str(e)}"}
+
+@router.post("/reset-password")
+async def reset_password(payload: dict = Body(...)):
+    if _house_col is None: return {"success": False, "message": "Backend chưa sẵn sàng (Thiếu Database)"}
+    users_collection = _house_col.database.User
+    token = payload.get("token")
+    new_password = payload.get("new_password")
+    username_input = payload.get("username")
+    print(f"Reset password attempt: username={username_input}, token={token[:10]}...")
+    if not token or not new_password or not username_input:
+        return {"success": False, "message": "Thiếu thông tin"}
+    try:
+        user = await users_collection.find_one({"_id": username_input, "password_reset_token": token})
+        if not user:
+            print(f"User or token not found: username={username_input}")
+            return {"success": False, "message": "Token không hợp lệ hoặc đã hết hạn"}
+        expire_at = user.get("password_reset_expires")
+        if not expire_at or expire_at < datetime.utcnow():
+            print(f"Token expired: {expire_at}")
+            return {"success": False, "message": "Token đã hết hạn"}
+
+        result = await users_collection.update_one(
+            {"_id": username_input},
+            {"$set": {"password": new_password},
+             "$inc": {"tokenversion": 1},
+             "$unset": {"password_reset_token": "", "password_reset_expires": ""}}
+        )
+
+        if result.modified_count == 0:
+            print(f"Update failed: modified_count=0")
+            return {"success": False, "message": "Không thể cập nhật mật khẩu"}
+
+        print(f"Password reset successful for {username_input}")
+        return {"success": True, "message": "Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới."}
+    except Exception as e:
+        print(f"Reset password error: {str(e)}")
+        return {"success": False, "message": f"Lỗi: {str(e)}"}
+
+@router.post("/change-password")
+async def change_password(payload: dict = Body(...), authorization: str = Header(None)):
+    if _house_col is None: return {"success": False, "message": "Backend chưa sẵn sàng (Thiếu Database)"}
+    users_collection = _house_col.database.User
+    old_password = payload.get("old_password")
+    new_password = payload.get("new_password")
+    if not old_password or not new_password:
+        return {"success": False, "message": "Thiếu thông tin"}
+    if not authorization or not authorization.startswith("Bearer "):
+        return {"success": False, "message": "Thiếu token"}
+    token = authorization.split(" ")[1]
+    try:
+        payload_token = decode_access_token(token)
+        username = payload_token.get("sub")
+        tokenversion = payload_token.get("tokenversion", 0)
+        user = await users_collection.find_one({"_id": username})
+        if not user:
+            return {"success": False, "message": "Không tìm thấy tài khoản"}
+        if user.get("password") != old_password:
+            return {"success": False, "message": "Mật khẩu hiện tại không đúng"}
+        if user.get("tokenversion", 0) != tokenversion:
+            return {"success": False, "message": "Token đã hết hạn"}
+
+        await users_collection.update_one(
+            {"_id": username},
+            {"$set": {"password": new_password},
+             "$inc": {"tokenversion": 1}}
+        )
+
+        return {"success": True, "message": "Đổi mật khẩu thành công. Vui lòng đăng nhập lại."}
+    except Exception as e:
+        return {"success": False, "message": f"Lỗi: {str(e)}"}
 
 @router.post("/control")
 async def update_control_override(payload: dict = Body(...)):

@@ -3,9 +3,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 import os
 import uvicorn
 from contextlib import asynccontextmanager  # <--- Thêm dòng này
+
+load_dotenv()
 
 # Import các Module
 from module.module2 import (
